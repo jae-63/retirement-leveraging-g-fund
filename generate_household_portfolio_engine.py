@@ -585,7 +585,7 @@ for i, year in enumerate(YEARS):
         g_cell = mark_input(style_body_cell(ws3, r, 7, number_format=CURRENCY_FMT, border=border))
 
         h_cell = style_body_cell(ws3, r, 8, number_format=CURRENCY_FMT, border=border)
-        h_cell.value = f'=E{r}-C{r}+IF(G{r}="",F{r},G{r})'
+        h_cell.value = f'=MAX(0,E{r}-C{r}+IF(G{r}="",F{r},G{r}))'
 
         ws3.row_dimensions[r].height = 28
 
