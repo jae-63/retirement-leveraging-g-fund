@@ -309,8 +309,10 @@ GLOSSARY = [
             "sale of depreciated assets."),
     ("TSP G Fund", "The federal Thrift Savings Plan's government-securities fund: principal-protected, "
                     "instantly liquid, and the household's operating cash vault."),
-    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain, expressed as a percentage of "
-                       "total net worth (set on The_Refill_Engine)."),
+    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain, set as a percentage (on "
+                       "The_Refill_Engine). That percentage is applied to each year's projected wealth "
+                       "(P_track), not to today's balance -- so the dollar target grows over time along "
+                       "with the hurdle model instead of staying pinned to today's net worth."),
     ("Conduit", "A Traditional IRA used as a pass-through for pre-tax rollovers back into the TSP."),
     ("Rollover", "A pre-tax transfer of funds between retirement accounts (e.g. Traditional IRA to TSP) "
                  "that doesn't trigger a taxable distribution."),
@@ -492,7 +494,7 @@ b2.number_format = PERCENT_FMT
 b2.font = bold_body_font
 b2.border = thin_border
 
-ws3.cell(row=3, column=1, value="Target Safety Anchor Balance ($)")
+ws3.cell(row=3, column=1, value="Target Safety Anchor Balance Today ($)")
 ws3.cell(row=3, column=1).font = label_font
 ws3.cell(row=3, column=1).fill = accent_fill
 ws3.cell(row=3, column=1).border = thin_border
@@ -505,15 +507,19 @@ b3.border = thin_border
 ws3.cell(row=4, column=1,
           value="Sequence-of-Returns-Risk (SRR) Shield: the Safety Anchor Target % above controls how large "
                 "a G Fund cash buffer this engine tries to maintain, so equities are never forced to sell "
-                "at a loss to fund living expenses. Raise or lower it to fit your risk tolerance.")
+                "at a loss to fund living expenses. Raise or lower it to fit your risk tolerance. Note: B3 "
+                "is only a snapshot of today's target -- the Quarterly Refill Engine below scales this same "
+                "percentage against each year's projected wealth (P_track, from the hurdle model further "
+                "down this tab) via its own 'Target Safety Anchor Balance (This Year)' column, so the goal "
+                "grows over time rather than staying pinned to today's balance.")
 ws3.cell(row=4, column=1).font = italic_note_font
 
 # ---- THE QUARTERLY REFILL ENGINE (primary output) ----
 QUARTERLY_BANNER_ROW = 6
 ws3.cell(row=QUARTERLY_BANNER_ROW, column=1,
           value="THE QUARTERLY REFILL ENGINE — PRIMARY OUTPUT: RECOMMENDED TSP TOP-UP TRANSFER")
-ws3.merge_cells(start_row=QUARTERLY_BANNER_ROW, start_column=1, end_row=QUARTERLY_BANNER_ROW, end_column=8)
-for col in range(1, 9):
+ws3.merge_cells(start_row=QUARTERLY_BANNER_ROW, start_column=1, end_row=QUARTERLY_BANNER_ROW, end_column=9)
+for col in range(1, 10):
     c = ws3.cell(row=QUARTERLY_BANNER_ROW, column=col)
     c.font = section_font
     c.fill = section_fill
@@ -530,6 +536,7 @@ quarterly_headers = [
     "Recommended Transfer This Quarter",
     "Actual Transferred (Log It Here)",
     "G Fund Balance (End of Qtr, Projected)",
+    "Target Safety Anchor Balance (This Year)",
 ]
 for idx, h in enumerate(quarterly_headers, start=1):
     ws3.cell(row=QUARTERLY_HEADER_ROW, column=idx, value=h)
@@ -565,9 +572,12 @@ for i, year in enumerate(YEARS):
         e_cell = style_body_cell(ws3, r, 5, number_format=CURRENCY_FMT, border=border)
         e_cell.value = f"={G_FUND_BALANCE_CELL}" if r == QUARTERLY_DATA_START else f"=H{r - 1}"
 
+        i_cell = style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT, border=border)
+        i_cell.value = f"=$B$2*D{annual_row}"
+
         f_cell = style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT, bold=True,
                                    fill=accent_fill, border=border)
-        f_cell.value = f'=IF(ISNUMBER(SEARCH("GOOD",D{r})),MAX(0,$B$3-E{r}),0)'
+        f_cell.value = f'=IF(ISNUMBER(SEARCH("GOOD",D{r})),MAX(0,I{r}-E{r}),0)'
 
         g_cell = mark_input(style_body_cell(ws3, r, 7, number_format=CURRENCY_FMT, border=border))
 
@@ -789,6 +799,7 @@ ws3.column_dimensions["E"].width = 22
 ws3.column_dimensions["F"].width = 22
 ws3.column_dimensions["G"].width = 22
 ws3.column_dimensions["H"].width = 22
+ws3.column_dimensions["I"].width = 22
 
 wb.save("household_portfolio_engine.xlsx")
 print("Wrote household_portfolio_engine.xlsx")
