@@ -1,0 +1,6 @@
+# Excel lock/temp files
+~$*.xlsx
+~$*.xls
+
+# Never commit real balances -- keep any local override file untracked
+real_balances.local.json
