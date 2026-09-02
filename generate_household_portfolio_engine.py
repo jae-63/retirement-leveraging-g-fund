@@ -1,13 +1,16 @@
 """
 generate_household_portfolio_engine.py
 
-Builds 'household_portfolio_engine.xlsx' -- a three-tab household retirement
+Builds 'household_portfolio_engine.xlsx' -- a four-tab household retirement
 income engine implementing a Sequence-of-Returns-Risk (SRR) shield strategy:
 
-  1. Variables_And_Log   -- annual COLA/hurdle inputs + a Jan-Dec monthly
+  1. Documentation       -- motivation, how the tabs fit together, a
+                             quarterly checklist, the color legend, and a
+                             glossary. Meant to be read first.
+  2. Variables_And_Log   -- annual COLA/hurdle inputs + a Jan-Dec monthly
                              TSP -> checking payment log per year (2026-2035)
-  2. Account_Tracker     -- unified household net worth across all accounts
-  3. The_Refill_Engine   -- Quarterly Refill Engine (the sheet's primary
+  3. Account_Tracker     -- unified household net worth across all accounts
+  4. The_Refill_Engine   -- Quarterly Refill Engine (the sheet's primary
                              output: how much to transfer from a non-TSP
                              account into the TSP G Fund each quarter),
                              an annual SRR hurdle model that gates it,
@@ -22,6 +25,8 @@ placeholders on purpose; do not put real dollar figures into this script.
 
 Run:  python3 generate_household_portfolio_engine.py
 """
+
+import math
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
@@ -142,6 +147,29 @@ def enable_gridlines(ws):
     ws.sheet_view.showGridLines = True
 
 
+def write_paragraph(ws, row, text, col=2, chars_per_line=80):
+    """Write a wrapped prose paragraph into a single cell and size the row
+    tall enough to show it without clipping (conservative estimate --
+    Excel/Sheets don't auto-grow row height for wrapped text on import)."""
+    cell = ws.cell(row=row, column=col, value=text)
+    cell.font = body_font
+    cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    lines = max(1, math.ceil(len(text) / chars_per_line))
+    ws.row_dimensions[row].height = lines * 15 + 8
+    return cell
+
+
+def write_section_banner(ws, row, text, end_col):
+    ws.cell(row=row, column=1, value=text)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=end_col)
+    for col in range(1, end_col + 1):
+        c = ws.cell(row=row, column=col)
+        c.font = section_font
+        c.fill = section_fill
+        c.border = thin_border
+    ws.row_dimensions[row].height = 20
+
+
 # ==========================================================================
 YEARS = list(range(2026, 2036))  # 2026..2035 inclusive (10 years)
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -150,10 +178,167 @@ MONTH_COLS = [get_column_letter(6 + i) for i in range(12)]  # F..Q
 wb = Workbook()
 
 # --------------------------------------------------------------------------
+# TAB 0: Documentation
+# --------------------------------------------------------------------------
+ws0 = wb.active
+ws0.title = "Documentation"
+DOC_CHARS_PER_LINE = 78  # matches column B's width below
+
+ws0.cell(row=1, column=1, value="HOUSEHOLD PORTFOLIO ENGINE — DOCUMENTATION & USER GUIDE")
+ws0.merge_cells(start_row=1, start_column=1, end_row=1, end_column=2)
+for col in (1, 2):
+    c = ws0.cell(row=1, column=col)
+    c.font = header_font
+    c.fill = header_fill
+    c.border = thin_border
+ws0.row_dimensions[1].height = 24
+
+r = 3
+write_section_banner(ws0, r, "WHY THIS SPREADSHEET EXISTS", 2)
+r += 1
+for para in (
+    "This workbook manages a two-bucket, decumulation-phase retirement income strategy built to protect "
+    "the household from Sequence-of-Returns Risk (SRR) -- the danger that a market downturn early in "
+    "retirement forces the sale of depreciated stocks to cover monthly living expenses, permanently "
+    "damaging the portfolio's ability to recover. The strategy rests on three ideas, described below.",
+
+    "1. The TSP G Fund as a \"free lunch\" cash vault. By law, the G Fund earns the yield of intermediate- "
+    "to long-term Treasuries while never losing principal value and staying instantly liquid. It serves as "
+    "the household's operating cash account -- monthly bills are paid straight out of it, so equities are "
+    "never sold to cover routine expenses.",
+
+    "2. A dynamic Refill Engine, not a fixed withdrawal rate. Instead of a static 4%-rule, this workbook "
+    "tracks a real-growth hurdle (COLA layered on a fixed real-growth baseline) year over year. When actual "
+    "household wealth clears that hurdle, it's safe to harvest equity gains and roll them back into the "
+    "G Fund to top the shield back up. When wealth falls short, all equity sales freeze and the G Fund alone "
+    "absorbs spending, giving stocks time to recover.",
+
+    "3. Asset location by account. Safe, fixed-income assets are deliberately concentrated in accounts "
+    "built for stability (the TSP G Fund, a spouse's workplace plan), while private IRAs hold the aggressive "
+    "growth positions and serve as Roth-conversion conduits -- keeping each spouse's accounts doing the job "
+    "they're best suited for.",
+):
+    write_paragraph(ws0, r, para, chars_per_line=DOC_CHARS_PER_LINE)
+    r += 1
+r += 1
+
+write_section_banner(ws0, r, "HOW THE FOUR TABS WORK TOGETHER", 2)
+r += 1
+for para in (
+    "Documentation (this tab) -- Motivation, how-to, a quarterly checklist, the color legend, and a "
+    "glossary. Nothing here feeds any formula; it's for the humans using the sheet.",
+
+    "Variables_And_Log -- Where you log the two things that change constantly: the actual Social "
+    "Security/Federal COLA each year, and every month's actual TSP -> checking payment. Everything else on "
+    "this tab is a formula built from those two inputs.",
+
+    "Account_Tracker -- A snapshot of every account's live balance, updated by hand whenever you check "
+    "statements (aim for at least quarterly). This is the single source of truth for household net worth "
+    "that every other tab's formulas reference.",
+
+    "The_Refill_Engine -- The decision-making tab. The Quarterly Refill Engine table is the headline "
+    "output -- each quarter it tells you how much (if anything) to move from a private pre-tax account into "
+    "the TSP G Fund. Below that, the Annual SRR Hurdle Model is the strategic gauge that decides GOOD vs. "
+    "POOR for the year, and the Emergency Liquidity Protocol tells you, in a full-blown crisis, exactly "
+    "which account to draw from next.",
+):
+    write_paragraph(ws0, r, para, chars_per_line=DOC_CHARS_PER_LINE)
+    r += 1
+r += 1
+
+write_section_banner(ws0, r, "YOUR QUARTERLY CHECKLIST", 2)
+r += 1
+checklist = [
+    "Update Account_Tracker with current balances from your statements.",
+    "Confirm Variables_And_Log has this quarter's three monthly TSP payments logged.",
+    "Open The_Refill_Engine and find this quarter's row in the Quarterly Refill Engine table.",
+    "Check the \"Recommended Transfer This Quarter\" cell. If it's $0, do nothing -- the shield is intact "
+    "or the market hasn't cleared its hurdle yet.",
+    "If it's a positive number, execute a pre-tax rollover of that amount from your Conversion Conduit "
+    "(Traditional IRA) into the TSP G Fund.",
+    "Log whatever you actually transferred in the \"Actual Transferred\" column, even if it matches the "
+    "recommendation exactly -- leaving it blank makes the sheet assume the recommendation happened.",
+    "If the TSP G Fund is ever fully drawn down, check the Emergency Liquidity Protocol block for the "
+    "next-dollar priority order.",
+]
+for i, item in enumerate(checklist, start=1):
+    num_cell = ws0.cell(row=r, column=1, value=f"{i}.")
+    num_cell.font = bold_body_font
+    num_cell.alignment = Alignment(horizontal="right", vertical="top")
+    write_paragraph(ws0, r, item, chars_per_line=DOC_CHARS_PER_LINE)
+    r += 1
+r += 1
+
+write_section_banner(ws0, r, "COLOR LEGEND", 2)
+r += 1
+legend_rows = [
+    (input_fill, "Pale yellow -- type your own numbers here."),
+    (None, "White (no fill) -- a formula; please leave it alone."),
+    (accent_fill, "Ice blue -- a computed summary or headline total."),
+    (green_fill, "Green (Emergency Liquidity Protocol only) -- the TSP G Fund shield is active."),
+    (yellow_fill, "Yellow (Emergency Liquidity Protocol only) -- the G Fund is exhausted; drawing from "
+                  "the cash buffer."),
+    (red_fill, "Red (Emergency Liquidity Protocol only) -- both cash shields are exhausted; the household "
+               "is in an emergency-liquidation stage."),
+]
+for fill, text in legend_rows:
+    swatch = ws0.cell(row=r, column=1)
+    swatch.border = thin_border
+    if fill:
+        swatch.fill = fill
+    write_paragraph(ws0, r, text, chars_per_line=DOC_CHARS_PER_LINE)
+    r += 1
+r += 1
+
+write_section_banner(ws0, r, "GLOSSARY", 2)
+r += 1
+GLOSSARY_HEADER_ROW = r
+ws0.cell(row=r, column=1, value="Term")
+ws0.cell(row=r, column=2, value="Definition")
+style_header_row(ws0, r, 1, 2)
+r += 1
+GLOSSARY = [
+    ("COLA", "The federal Cost-of-Living Adjustment, applied annually to Social Security/federal "
+             "retirement benefits."),
+    ("Hurdle Rate", "The minimum real (inflation-adjusted) growth rate the portfolio needs to clear to be "
+                     "considered \"on track\" -- COLA layered on a fixed real-growth baseline."),
+    ("W_t / W_q", "Total dollar outflows (withdrawals) for a given year (t) or quarter (q)."),
+    ("P_track", "The simulated target portfolio value that the household's actual wealth is measured "
+                "against each year."),
+    ("SRR", "Sequence-of-Returns Risk -- the risk that a downturn early in retirement forces permanent "
+            "sale of depreciated assets."),
+    ("TSP G Fund", "The federal Thrift Savings Plan's government-securities fund: principal-protected, "
+                    "instantly liquid, and the household's operating cash vault."),
+    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain, expressed as a percentage of "
+                       "total net worth (set on The_Refill_Engine)."),
+    ("Conduit", "A Traditional IRA used as a pass-through for pre-tax rollovers back into the TSP."),
+    ("Rollover", "A pre-tax transfer of funds between retirement accounts (e.g. Traditional IRA to TSP) "
+                 "that doesn't trigger a taxable distribution."),
+    ("Allocation Mix", "Each account's share of total household net worth, shown on Account_Tracker."),
+]
+for term, definition in GLOSSARY:
+    term_cell = ws0.cell(row=r, column=1, value=term)
+    term_cell.font = bold_body_font
+    term_cell.border = thin_border
+    term_cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    def_cell = ws0.cell(row=r, column=2, value=definition)
+    def_cell.font = body_font
+    def_cell.border = thin_border
+    def_cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    lines = max(1, math.ceil(len(definition) / DOC_CHARS_PER_LINE))
+    ws0.row_dimensions[r].height = lines * 15 + 8
+    r += 1
+GLOSSARY_END_ROW = r - 1
+
+ws0.column_dimensions["A"].width = 22
+ws0.column_dimensions["B"].width = 90
+enable_gridlines(ws0)
+ws0.freeze_panes = "A2"
+
+# --------------------------------------------------------------------------
 # TAB 1: Variables_And_Log
 # --------------------------------------------------------------------------
-ws1 = wb.active
-ws1.title = "Variables_And_Log"
+ws1 = wb.create_sheet("Variables_And_Log")
 
 BANNER_ROW_1 = 1
 ws1.cell(row=BANNER_ROW_1, column=1,
@@ -230,9 +415,9 @@ ACCOUNTS = [
     ("Your Pre-Tax Account", "TSP G Fund", 100_000),
     ("Your Conversion Conduit", "Private Traditional IRA", 100_000),
     ("Your Tax-Free Growth", "Private Roth IRA", 100_000),
-    ("Wife's Tax-Free Growth", "Private Roth IRA", 100_000),
-    ("Wife's Safe Pre-Tax Account", "Current Employer 403b (Active + Reverse Rollover)", 100_000),
-    ("Wife's Conversion Conduit", "Private Traditional IRA", 100_000),
+    ("Spouse's Tax-Free Growth", "Private Roth IRA", 100_000),
+    ("Spouse's Safe Pre-Tax Account", "Current Employer 403b (Active + Reverse Rollover)", 100_000),
+    ("Spouse's Conversion Conduit", "Private Traditional IRA", 100_000),
     ("Short-Term Liquidity", "Merrill Edge Cash Buffer", 100_000),
 ]
 
@@ -278,7 +463,7 @@ ws2.cell(row=legend_row_2, column=1).font = italic_note_font
 # Named/explicit cell references used elsewhere in the workbook
 G_FUND_BALANCE_CELL = f"'Account_Tracker'!$C${DATA_START_ROW_2}"                    # row 2
 PRIVATE_TRAD_IRA_CELL = f"'Account_Tracker'!$C${DATA_START_ROW_2 + 1}"              # row 3
-WIFE_403B_CELL = f"'Account_Tracker'!$C${DATA_START_ROW_2 + 4}"                     # row 6
+SPOUSE_403B_CELL = f"'Account_Tracker'!$C${DATA_START_ROW_2 + 4}"                     # row 6
 MERRILL_CASH_BUFFER_CELL = f"'Account_Tracker'!$C${DATA_START_ROW_2 + 6}"           # row 8
 
 enable_gridlines(ws2)
@@ -527,7 +712,7 @@ PRIORITY_2_TEXT = (
 )
 PRIORITY_3_TEXT = (
     "\U0001F6A8 EMERGENCY LIQUIDATION - STAGE 1: G Fund and Cash Buffers are exhausted. Turn on monthly "
-    "distributions from Wife's Current Employer 403b. Her pre-tax employer plan qualifies for the Maryland "
+    "distributions from Spouse's Current Employer 403b. Their pre-tax employer plan qualifies for the Maryland "
     "Pension Exclusion at age 65, making it more tax-efficient than touching your private traditional IRA."
 )
 PRIORITY_4_TEXT = (
@@ -540,7 +725,7 @@ PRIORITY_4_TEXT = (
 protocol_formula = (
     f'=IF({G_FUND_BALANCE_CELL}>0,"{PRIORITY_1_TEXT}",'
     f'IF(AND({G_FUND_BALANCE_CELL}=0,{MERRILL_CASH_BUFFER_CELL}>0),"{PRIORITY_2_TEXT}",'
-    f'IF(AND({G_FUND_BALANCE_CELL}=0,{MERRILL_CASH_BUFFER_CELL}=0,{WIFE_403B_CELL}>0),"{PRIORITY_3_TEXT}",'
+    f'IF(AND({G_FUND_BALANCE_CELL}=0,{MERRILL_CASH_BUFFER_CELL}=0,{SPOUSE_403B_CELL}>0),"{PRIORITY_3_TEXT}",'
     f'"{PRIORITY_4_TEXT}")))'
 )
 protocol_cell.value = protocol_formula
