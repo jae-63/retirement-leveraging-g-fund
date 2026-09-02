@@ -309,10 +309,15 @@ GLOSSARY = [
             "sale of depreciated assets."),
     ("TSP G Fund", "The federal Thrift Savings Plan's government-securities fund: principal-protected, "
                     "instantly liquid, and the household's operating cash vault."),
-    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain, set as a percentage (on "
-                       "The_Refill_Engine). That percentage is applied to each year's projected wealth "
-                       "(P_track), not to today's balance -- so the dollar target grows over time along "
-                       "with the hurdle model instead of staying pinned to today's net worth."),
+    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain. Set as a step function (on "
+                       "The_Refill_Engine): a higher percentage through the SRR \"red zone\" -- the first "
+                       "several years of retirement -- then a lower one afterward. That percentage is applied "
+                       "each year to that year's projected wealth (P_track), not to today's balance, so the "
+                       "dollar target still grows within each step instead of staying pinned to today's "
+                       "net worth."),
+    ("Red Zone", "The first several years of retirement, when a bad sequence of market returns does the "
+                 "most lasting damage to a portfolio (SRR risk is heavily front-loaded). The Safety Anchor "
+                 "holds a higher percentage during this window."),
     ("Conduit", "A Traditional IRA used as a pass-through for pre-tax rollovers back into the TSP."),
     ("Rollover", "A pre-tax transfer of funds between retirement accounts (e.g. Traditional IRA to TSP) "
                  "that doesn't trigger a taxable distribution."),
@@ -476,46 +481,44 @@ ws2.freeze_panes = "A2"
 # --------------------------------------------------------------------------
 ws3 = wb.create_sheet("The_Refill_Engine")
 
-ws3.cell(row=1, column=1, value="Total Current Actual Wealth")
-ws3.cell(row=1, column=1).font = label_font
-ws3.cell(row=1, column=1).fill = accent_fill
-ws3.cell(row=1, column=1).border = thin_border
-b1 = ws3.cell(row=1, column=2, value=f"={TOTAL_NET_WORTH_REF}")
-b1.number_format = CURRENCY_FMT
-b1.font = bold_body_font
-b1.fill = accent_fill
-b1.border = thin_border
+def write_kv_row(row, label, value, number_format, is_input=False, is_summary=False):
+    label_cell = ws3.cell(row=row, column=1, value=label)
+    label_cell.font = label_font
+    label_cell.border = thin_border
+    val_cell = ws3.cell(row=row, column=2, value=value)
+    val_cell.number_format = number_format
+    val_cell.font = bold_body_font
+    val_cell.border = thin_border
+    if is_summary:
+        label_cell.fill = accent_fill
+        val_cell.fill = accent_fill
+    if is_input:
+        mark_input(val_cell)
+    return val_cell
 
-ws3.cell(row=2, column=1, value="Safety Anchor Target % (of Net Worth)")
-ws3.cell(row=2, column=1).font = label_font
-ws3.cell(row=2, column=1).border = thin_border
-b2 = mark_input(ws3.cell(row=2, column=2, value=0.35))
-b2.number_format = PERCENT_FMT
-b2.font = bold_body_font
-b2.border = thin_border
 
-ws3.cell(row=3, column=1, value="Target Safety Anchor Balance Today ($)")
-ws3.cell(row=3, column=1).font = label_font
-ws3.cell(row=3, column=1).fill = accent_fill
-ws3.cell(row=3, column=1).border = thin_border
-b3 = ws3.cell(row=3, column=2, value="=B1*B2")
-b3.number_format = CURRENCY_FMT
-b3.font = bold_body_font
-b3.fill = accent_fill
-b3.border = thin_border
+write_kv_row(1, "Total Current Actual Wealth", f"={TOTAL_NET_WORTH_REF}", CURRENCY_FMT, is_summary=True)
+write_kv_row(2, "Retirement Start Year", 2026, "0", is_input=True)
+write_kv_row(3, "Age at Retirement Start", 63, "0", is_input=True)
+write_kv_row(4, "Red Zone Length (Years)", 10, "0", is_input=True)
+write_kv_row(5, "Red Zone Target % (elevated, early retirement)", 0.35, PERCENT_FMT, is_input=True)
+write_kv_row(6, "Post-Red-Zone Target % (steady state)", 0.25, PERCENT_FMT, is_input=True)
+write_kv_row(7, "Current Safety Anchor %", "=IF(YEAR(TODAY())-B2<B4,B5,B6)", PERCENT_FMT, is_summary=True)
+write_kv_row(8, "Target Safety Anchor Balance Today ($)", "=B1*B7", CURRENCY_FMT, is_summary=True)
 
-ws3.cell(row=4, column=1,
-          value="Sequence-of-Returns-Risk (SRR) Shield: the Safety Anchor Target % above controls how large "
-                "a G Fund cash buffer this engine tries to maintain, so equities are never forced to sell "
-                "at a loss to fund living expenses. Raise or lower it to fit your risk tolerance. Note: B3 "
-                "is only a snapshot of today's target -- the Quarterly Refill Engine below scales this same "
-                "percentage against each year's projected wealth (P_track, from the hurdle model further "
-                "down this tab) via its own 'Target Safety Anchor Balance (This Year)' column, so the goal "
-                "grows over time rather than staying pinned to today's balance.")
-ws3.cell(row=4, column=1).font = italic_note_font
+ws3.cell(row=9, column=1,
+          value="Sequence-of-Returns-Risk (SRR) Shield: this engine uses a step function, not a flat "
+                "percentage. SRR is concentrated in the first years of retirement (the \"red zone\"), when a "
+                "bad sequence does the most damage; research supports holding a larger safety anchor through "
+                "that window, then a smaller one afterward, rather than raising it further with age. Each "
+                "year's actual target -- Red Zone % while Age < Age-at-Retirement + Red-Zone-Length, "
+                "Post-Red-Zone % after -- is computed per-year in the Annual SRR Hurdle Model below and drives "
+                "the Quarterly Refill Engine's 'Target Safety Anchor Balance (This Year)' column. Row 8 above "
+                "is only a live snapshot of today's applicable target for quick reference.")
+ws3.cell(row=9, column=1).font = italic_note_font
 
 # ---- THE QUARTERLY REFILL ENGINE (primary output) ----
-QUARTERLY_BANNER_ROW = 6
+QUARTERLY_BANNER_ROW = 11
 ws3.cell(row=QUARTERLY_BANNER_ROW, column=1,
           value="THE QUARTERLY REFILL ENGINE — PRIMARY OUTPUT: RECOMMENDED TSP TOP-UP TRANSFER")
 ws3.merge_cells(start_row=QUARTERLY_BANNER_ROW, start_column=1, end_row=QUARTERLY_BANNER_ROW, end_column=9)
@@ -546,8 +549,8 @@ ws3.row_dimensions[QUARTERLY_HEADER_ROW].height = 40
 QUARTER_LABELS = ["Q1", "Q2", "Q3", "Q4"]
 QUARTER_MONTH_SLICES = [(0, 3), (3, 6), (6, 9), (9, 12)]
 
-QUARTERLY_DATA_START = QUARTERLY_HEADER_ROW + 1  # row 8
-ANNUAL_DATA_START = 52  # fixed layout constant, defined by the annual table built below
+QUARTERLY_DATA_START = QUARTERLY_HEADER_ROW + 1  # row 13
+ANNUAL_DATA_START = 57  # fixed layout constant, defined by the annual table built below
 
 for i, year in enumerate(YEARS):
     var_log_row = DATA_START_ROW_1 + i
@@ -573,7 +576,7 @@ for i, year in enumerate(YEARS):
         e_cell.value = f"={G_FUND_BALANCE_CELL}" if r == QUARTERLY_DATA_START else f"=H{r - 1}"
 
         i_cell = style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT, border=border)
-        i_cell.value = f"=$B$2*D{annual_row}"
+        i_cell.value = f"=F{annual_row}*D{annual_row}"
 
         f_cell = style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT, bold=True,
                                    fill=accent_fill, border=border)
@@ -592,21 +595,22 @@ QUARTERLY_DATA_END = QUARTERLY_DATA_START + 4 * len(YEARS) - 1  # row 47
 ANNUAL_BANNER_ROW = QUARTERLY_DATA_END + 3  # row 50
 ws3.cell(row=ANNUAL_BANNER_ROW, column=1,
           value="ANNUAL SRR HURDLE MODEL — STRATEGIC PACING CHECK (GATES THE QUARTERLY REFILL ABOVE)")
-ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=5)
-for col in range(1, 6):
+ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=6)
+for col in range(1, 7):
     c = ws3.cell(row=ANNUAL_BANNER_ROW, column=col)
     c.font = section_font
     c.fill = section_fill
     c.border = thin_border
 ws3.row_dimensions[ANNUAL_BANNER_ROW].height = 20
 
-ANNUAL_HEADER_ROW = ANNUAL_BANNER_ROW + 1  # row 51
+ANNUAL_HEADER_ROW = ANNUAL_BANNER_ROW + 1  # row 56
 annual_headers = [
     "Year",
     "Total Annual Hurdle Rate",
     "Annual Outflows (W_t)",
     "Simulated Target Portfolio (P_track)",
     "Performance Logic Trigger",
+    "Safety Anchor % (This Year)",
 ]
 for idx, h in enumerate(annual_headers, start=1):
     ws3.cell(row=ANNUAL_HEADER_ROW, column=idx, value=h)
@@ -637,6 +641,15 @@ for i, year in enumerate(YEARS):
     trig_cell = style_body_cell(ws3, r, 5)
     trig_cell.value = trigger_formula
     trig_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    # Step function: elevated Red Zone % while this row's year is still within Red Zone
+    # Length years of Retirement Start Year, Post-Red-Zone % afterward. (Age at this row
+    # = B3 + (A{r}-B2), so "years since retirement start" and "years since Age B3" are
+    # the same test -- Age at Retirement Start (B3) doesn't need to appear in the formula
+    # itself, but stays on the sheet since it's what makes the red-zone window meaningful
+    # to a human reader, e.g. "age 63 to 73".)
+    style_body_cell(ws3, r, 6, number_format=PERCENT_FMT).value = f"=IF(A{r}-$B$2<$B$4,$B$5,$B$6)"
+
     ws3.row_dimensions[r].height = 28
 
 ANNUAL_DATA_END = ANNUAL_DATA_START + len(YEARS) - 1  # row 61
