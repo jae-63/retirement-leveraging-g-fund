@@ -39,7 +39,7 @@ $(DEMO_XLSX): $(DEMO_SCRIPT)
 test: verify-tracker verify-demo
 
 verify-tracker: $(TRACKER_XLSX)
-	scripts/verify_workbook.sh $(TRACKER_XLSX)
+	scripts/verify_workbook.sh $(TRACKER_XLSX) Documentation Variables_And_Log Account_Tracker The_Refill_Engine Graph
 
 verify-demo: $(DEMO_XLSX)
 	scripts/verify_scenario_demo.sh $(DEMO_XLSX)

@@ -4,7 +4,10 @@
 # Bear / Bull / Choppy and confirms the GOOD/POOR trigger behaves as
 # designed for each one -- Bear stays POOR throughout, Bull stays GOOD
 # throughout, Choppy shows both. Also runs the generic formula-error scan
-# (same check as verify_workbook.sh) while the file is open.
+# (same check as verify_workbook.sh, including its known limitation -- see
+# that script's header -- that a real error surfaces via AppleScript as
+# `missing value`, not text, so this only catches the rare case it comes
+# back as a literal string) while the file is open.
 #
 # Counts "GOOD"/"POOR" substrings across The_Refill_Engine tab's used range
 # (skipping column 1, which holds prose labels/notes -- including one that
@@ -38,7 +41,7 @@ tell application "Microsoft Excel"
         repeat with rowVals in allVals
             repeat with v in rowVals
                 if class of v is string then
-                    if v starts with "#" then
+                    if v is in {"#REF!", "#VALUE!", "#DIV/0!", "#NAME?", "#NULL!", "#NUM!", "#SPILL!", "#CALC!"} then
                         set errCount to errCount + 1
                         log "ERROR in " & wsName & ": " & v
                     end if

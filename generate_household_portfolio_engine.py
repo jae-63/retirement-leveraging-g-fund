@@ -32,6 +32,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.utils import get_column_letter
+from openpyxl.chart import BarChart, Reference
 
 # --------------------------------------------------------------------------
 # Corporate "Classic Navy" palette
@@ -222,25 +223,33 @@ for para in (
     r += 1
 r += 1
 
-write_section_banner(ws0, r, "HOW THE FOUR TABS WORK TOGETHER", 2)
+write_section_banner(ws0, r, "HOW THE FIVE TABS WORK TOGETHER", 2)
 r += 1
 for para in (
     "Documentation (this tab) -- Motivation, how-to, a quarterly checklist, the color legend, and a "
     "glossary. Nothing here feeds any formula; it's for the humans using the sheet.",
 
-    "Variables_And_Log -- Where you log the two things that change constantly: the actual Social "
-    "Security/Federal COLA each year, and every month's actual TSP -> checking payment. Everything else on "
-    "this tab is a formula built from those two inputs.",
+    "Variables_And_Log -- Where you log the things that change constantly: the actual Social "
+    "Security/Federal COLA each year, every month's actual TSP -> checking payment, the tax cost of any "
+    "Roth conversion (funded separately, from non-TSP accounts), and once a year, your actual total "
+    "household balance. Everything else on this tab is a formula built from those inputs.",
 
     "Account_Tracker -- A snapshot of every account's live balance, updated by hand whenever you check "
     "statements (aim for at least quarterly). This is the single source of truth for household net worth "
     "that every other tab's formulas reference.",
 
-    "The_Refill_Engine -- The decision-making tab. The Quarterly Refill Engine table is the headline "
-    "output -- each quarter it tells you how much (if anything) to move from a private pre-tax account into "
-    "the TSP G Fund. Below that, the Annual SRR Hurdle Model is the strategic gauge that decides GOOD vs. "
-    "POOR for the year, and the Emergency Liquidity Protocol tells you, in a full-blown crisis, exactly "
-    "which account to draw from next.",
+    "The_Refill_Engine -- The decision-making tab. A block of configured inputs (Retirement Start Year, "
+    "Ramp Length, the G Fund target percentages, etc.) each carry a Default, an optional Override, and the "
+    "resulting Effective value everything else on the tab actually uses. The Quarterly Refill Engine table "
+    "is the headline output -- each quarter it tells you how much (if anything) to move from a private "
+    "pre-tax account into the TSP G Fund. Below that, the Annual SRR Hurdle Model is the strategic gauge "
+    "that decides GOOD vs. POOR for the year (using wealth adjusted to add back any logged Roth conversion "
+    "cost, so a planned tax bill is never mistaken for a market downturn), and the Emergency Liquidity "
+    "Protocol tells you, in a full-blown crisis, exactly which account to draw from next.",
+
+    "Graph -- A single chart, read-only, pulling straight from The_Refill_Engine's Annual SRR Hurdle Model: "
+    "Original Predicted Wealth vs. Current Predicted Wealth vs. Actual Balance, by year. Kept on its own "
+    "tab so it never crowds the data-entry tabs -- open it only when you want the picture.",
 ):
     write_paragraph(ws0, r, para, chars_per_line=DOC_CHARS_PER_LINE)
     r += 1
@@ -258,6 +267,13 @@ checklist = [
     "(Traditional IRA) into the TSP G Fund.",
     "Log whatever you actually transferred in the \"Actual Transferred\" column, even if it matches the "
     "recommendation exactly -- leaving it blank makes the sheet assume the recommendation happened.",
+    "If you executed a Roth conversion this year, log its tax cost (IRA funds used minus the resulting "
+    "Roth deposit) in Variables_And_Log -- this keeps it from skewing the GOOD/POOR trigger.",
+    "Once a year, log that year's real total household balance in Variables_And_Log's Actual Balance "
+    "column, so the Graph tab has something to plot against the projections.",
+    "The first time your real starting balances and assumptions are in Google Sheets, select The_Refill_"
+    "Engine's Original Predicted Wealth column and Paste Special -> Values Only over itself, once, to "
+    "freeze it as your baseline -- never touch it again after that.",
     "If the TSP G Fund is ever fully drawn down, check the Emergency Liquidity Protocol block for the "
     "next-dollar priority order.",
 ]
@@ -309,15 +325,27 @@ GLOSSARY = [
             "sale of depreciated assets."),
     ("TSP G Fund", "The federal Thrift Savings Plan's government-securities fund: principal-protected, "
                     "instantly liquid, and the household's operating cash vault."),
-    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain. Set as a step function (on "
-                       "The_Refill_Engine): a higher percentage through the SRR \"red zone\" -- the first "
-                       "several years of retirement -- then a lower one afterward. That percentage is applied "
-                       "each year to that year's projected wealth (P_track), not to today's balance, so the "
-                       "dollar target still grows within each step instead of staying pinned to today's "
-                       "net worth."),
-    ("Red Zone", "The first several years of retirement, when a bad sequence of market returns does the "
-                 "most lasting damage to a portfolio (SRR risk is heavily front-loaded). The Safety Anchor "
-                 "holds a higher percentage during this window."),
+    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain. Ramps linearly (on "
+                       "The_Refill_Engine) from a Starting % down to an Ending % over the Ramp Length, then "
+                       "holds flat -- largest during the early years when SRR risk is heavily front-loaded, "
+                       "easing as that window passes. Applied each year to that year's projected wealth "
+                       "(P_track), not to today's balance, so the dollar target keeps moving with the plan "
+                       "instead of staying pinned to today's net worth."),
+    ("Ramp Length", "How many years the G Fund target percentage takes to slide from its Starting % to its "
+                     "Ending %, before holding flat. A configured input on The_Refill_Engine."),
+    ("Default / Override / Effective", "The three-column pattern used for every configured input on "
+                                        "The_Refill_Engine. Default is the built-in value; Override is blank "
+                                        "unless you want to change it; Effective is whichever one is actually "
+                                        "in force, and is what every other formula on the tab references."),
+    ("Adjusted Actual Wealth", "Account_Tracker's live total plus the cumulative Roth conversion tax cost "
+                                "logged to date -- what the GOOD/POOR trigger and Safety Anchor sizing "
+                                "actually use, so a planned conversion's tax bill isn't mistaken for a "
+                                "market downturn."),
+    ("Original Predicted Wealth", "A column on the Annual SRR Hurdle Model that mirrors Current Predicted "
+                                   "Wealth (P_track) until you freeze it by hand (Paste Special -> Values "
+                                   "Only, once, after your real numbers are in) -- after that it stays fixed "
+                                   "as your baseline while Current keeps moving with your latest assumptions. "
+                                   "Feeds the Graph tab."),
     ("Conduit", "A Traditional IRA used as a pass-through for pre-tax rollovers back into the TSP."),
     ("Rollover", "A pre-tax transfer of funds between retirement accounts (e.g. Traditional IRA to TSP) "
                  "that doesn't trigger a taxable distribution."),
@@ -349,9 +377,11 @@ ws1 = wb.create_sheet("Variables_And_Log")
 
 BANNER_ROW_1 = 1
 ws1.cell(row=BANNER_ROW_1, column=1,
-          value="HOUSEHOLD VARIABLE LOG — ANNUAL HURDLE INPUTS & MONTHLY TSP → CHECKING PAYMENT LOG (2026-2035)")
-ws1.merge_cells(start_row=BANNER_ROW_1, start_column=1, end_row=BANNER_ROW_1, end_column=5 + 12)
-for col in range(1, 5 + 12 + 1):
+          value="HOUSEHOLD VARIABLE LOG — ANNUAL HURDLE INPUTS, MONTHLY TSP → CHECKING PAYMENT LOG, "
+                "ROTH CONVERSION COST & ACTUAL BALANCE LOG (2026-2035)")
+LAST_COL_1 = 5 + 12 + 2  # 5 lead cols + 12 months + Roth conversion cost + actual balance
+ws1.merge_cells(start_row=BANNER_ROW_1, start_column=1, end_row=BANNER_ROW_1, end_column=LAST_COL_1)
+for col in range(1, LAST_COL_1 + 1):
     c = ws1.cell(row=BANNER_ROW_1, column=col)
     c.font = section_font
     c.fill = section_fill
@@ -365,11 +395,19 @@ ws1_headers = [
     "Rule of Four Hurdle Baseline",
     "Total Annual Hurdle Rate",
     "Total Annual Outflows (W_t)",
-] + MONTH_NAMES
+] + MONTH_NAMES + [
+    "Roth Conversion Tax Cost (This Year)",
+    "Actual Balance (Logged, Your Check-In Date)",
+]
 for idx, h in enumerate(ws1_headers, start=1):
     ws1.cell(row=HEADER_ROW_1, column=idx, value=h)
 style_header_row(ws1, HEADER_ROW_1, 1, len(ws1_headers))
 ws1.row_dimensions[HEADER_ROW_1].height = 32
+
+ROTH_CONVERSION_COL = 6 + 12       # R -- IRA-funded Roth conversion tax cost, logged as it happens
+ACTUAL_BALANCE_COL = ROTH_CONVERSION_COL + 1  # S -- actual total household wealth, logged once/year
+ROTH_CONVERSION_COL_LETTER = get_column_letter(ROTH_CONVERSION_COL)
+ACTUAL_BALANCE_COL_LETTER = get_column_letter(ACTUAL_BALANCE_COL)
 
 DATA_START_ROW_1 = HEADER_ROW_1 + 1  # row 3
 for i, year in enumerate(YEARS):
@@ -385,6 +423,8 @@ for i, year in enumerate(YEARS):
     style_body_cell(ws1, r, 5, number_format=CURRENCY_FMT).value = f"=SUM({month_first}{r}:{month_last}{r})"
     for m, col_letter in enumerate(MONTH_COLS):
         mark_input(style_body_cell(ws1, r, 6 + m, number_format=CURRENCY_FMT))
+    mark_input(style_body_cell(ws1, r, ROTH_CONVERSION_COL, number_format=CURRENCY_FMT)).value = 0
+    mark_input(style_body_cell(ws1, r, ACTUAL_BALANCE_COL, number_format=CURRENCY_FMT))  # left blank until logged
 
 LAST_DATA_ROW_1 = DATA_START_ROW_1 + len(YEARS) - 1  # row 12 (2035)
 
@@ -393,7 +433,12 @@ ws1.cell(row=note_row_1, column=1,
           value="Notes: Seed 2026 COLA is set; enter 2027-2035 COLA as it is announced each fall. "
                 "Log each month's actual TSP -> checking payment in columns F:Q as it is set or changes -- "
                 "Total Annual Outflows (E) sums automatically. If a payment amount changes mid-year, just "
-                "overwrite that month's cell going forward.")
+                "overwrite that month's cell going forward. Roth conversions are funded entirely from non-TSP "
+                "accounts and tracked separately from this plan -- log only the tax cost of each conversion "
+                "(IRA funds used minus the resulting Roth deposit) in the Roth Conversion Tax Cost column, so "
+                "The_Refill_Engine can add it back and avoid mistaking a planned tax cost for a market "
+                "downturn. Log Actual Balance once a year, as of whatever check-in date you choose, to drive "
+                "the Original vs. Current vs. Actual chart on The_Refill_Engine.")
 ws1.cell(row=note_row_1, column=1).font = italic_note_font
 
 legend_row_1 = note_row_1 + 1  # row 15
@@ -497,28 +542,104 @@ def write_kv_row(row, label, value, number_format, is_input=False, is_summary=Fa
     return val_cell
 
 
-write_kv_row(1, "Total Current Actual Wealth", f"={TOTAL_NET_WORTH_REF}", CURRENCY_FMT, is_summary=True)
-write_kv_row(2, "Retirement Start Year", 2026, "0", is_input=True)
-write_kv_row(3, "Age at Retirement Start", 63, "0", is_input=True)
-write_kv_row(4, "Red Zone Length (Years)", 10, "0", is_input=True)
-write_kv_row(5, "Red Zone Target % (elevated, early retirement)", 0.35, PERCENT_FMT, is_input=True)
-write_kv_row(6, "Post-Red-Zone Target % (steady state)", 0.25, PERCENT_FMT, is_input=True)
-write_kv_row(7, "Current Safety Anchor %", "=IF(YEAR(TODAY())-B2<B4,B5,B6)", PERCENT_FMT, is_summary=True)
-write_kv_row(8, "Target Safety Anchor Balance Today ($)", "=B1*B7", CURRENCY_FMT, is_summary=True)
+def write_config_row(row, label, default_value, number_format):
+    """A configured input laid out as Default (col B) / Override (col C,
+    blank = use Default) / Effective (col D, the absolute ref every other
+    formula on this sheet should point at)."""
+    label_cell = ws3.cell(row=row, column=1, value=label)
+    label_cell.font = label_font
+    label_cell.border = thin_border
 
-ws3.cell(row=9, column=1,
-          value="Sequence-of-Returns-Risk (SRR) Shield: this engine uses a step function, not a flat "
-                "percentage. SRR is concentrated in the first years of retirement (the \"red zone\"), when a "
-                "bad sequence does the most damage; research supports holding a larger safety anchor through "
-                "that window, then a smaller one afterward, rather than raising it further with age. Each "
-                "year's actual target -- Red Zone % while Age < Age-at-Retirement + Red-Zone-Length, "
-                "Post-Red-Zone % after -- is computed per-year in the Annual SRR Hurdle Model below and drives "
-                "the Quarterly Refill Engine's 'Target Safety Anchor Balance (This Year)' column. Row 8 above "
-                "is only a live snapshot of today's applicable target for quick reference.")
-ws3.cell(row=9, column=1).font = italic_note_font
+    default_cell = ws3.cell(row=row, column=2, value=default_value)
+    default_cell.number_format = number_format
+    default_cell.font = body_font
+    default_cell.border = thin_border
+
+    override_cell = ws3.cell(row=row, column=3)
+    override_cell.number_format = number_format
+    override_cell.font = body_font
+    override_cell.border = thin_border
+    mark_input(override_cell)
+
+    effective_cell = ws3.cell(row=row, column=4, value=f'=IF(C{row}="",B{row},C{row})')
+    effective_cell.number_format = number_format
+    effective_cell.font = bold_body_font
+    effective_cell.fill = accent_fill
+    effective_cell.border = thin_border
+    return f"$D${row}"
+
+
+r = 1
+write_kv_row(r, "Total Current Actual Wealth (Live Account_Tracker Snapshot)",
+             f"={TOTAL_NET_WORTH_REF}", CURRENCY_FMT, is_summary=True)
+ACTUAL_WEALTH_SNAPSHOT_ROW = r
+r += 1
+write_kv_row(r, "Cumulative Roth Conversion Tax Cost (Logged To Date)",
+             f"=SUM('Variables_And_Log'!{ROTH_CONVERSION_COL_LETTER}{DATA_START_ROW_1}:"
+             f"{ROTH_CONVERSION_COL_LETTER}{LAST_DATA_ROW_1})", CURRENCY_FMT, is_summary=True)
+ROTH_ADDBACK_ROW = r
+r += 1
+write_kv_row(r, "Adjusted Actual Wealth (Used for GOOD/POOR Trigger & Safety Anchor)",
+             f"=B{ACTUAL_WEALTH_SNAPSHOT_ROW}+B{ROTH_ADDBACK_ROW}", CURRENCY_FMT, is_summary=True)
+ADJUSTED_WEALTH_ROW = r
+ADJUSTED_WEALTH_CELL = f"$B${ADJUSTED_WEALTH_ROW}"
+r += 1
+ws3.cell(row=r, column=1,
+          value="Roth conversions are funded from non-TSP accounts and planned separately from this "
+                "strategy, but their tax cost is a real, deliberate reduction in household wealth -- not a "
+                "market downturn. Adding the logged cost back here keeps the GOOD/POOR trigger and the "
+                "Safety Anchor sized against market performance only, not a planned conversion.")
+ws3.cell(row=r, column=1).font = italic_note_font
+r += 2  # blank spacer row
+
+write_section_banner(ws3, r, "CONFIGURED INPUTS — DEFAULT / OVERRIDE / EFFECTIVE", 4)
+r += 1
+config_header_row = r
+for idx, h in enumerate(["Input", "Default", "Override (blank = use Default)", "Effective (used below)"], start=1):
+    ws3.cell(row=config_header_row, column=idx, value=h)
+style_header_row(ws3, config_header_row, 1, 4)
+ws3.row_dimensions[config_header_row].height = 28
+r += 1
+
+RETIREMENT_START_CELL = write_config_row(r, "Retirement Start Year", 2026, "0")
+r += 1
+AGE_AT_START_CELL = write_config_row(r, "Age at Retirement Start", 63, "0")
+r += 1
+RAMP_LENGTH_CELL = write_config_row(r, "Ramp Length (Years)", 10, "0")
+r += 1
+STARTING_TARGET_CELL = write_config_row(
+    r, "Starting G Fund Target % (elevated, early retirement)", 0.30, PERCENT_FMT)
+r += 1
+ENDING_TARGET_CELL = write_config_row(r, "Ending G Fund Target % (steady state)", 0.20, PERCENT_FMT)
+r += 1
+r += 1  # blank spacer row
+
+write_kv_row(r, "Current G Fund Target % (Today)",
+             f"=IF(YEAR(TODAY())-{RETIREMENT_START_CELL}>={RAMP_LENGTH_CELL},{ENDING_TARGET_CELL},"
+             f"{STARTING_TARGET_CELL}+({ENDING_TARGET_CELL}-{STARTING_TARGET_CELL})*"
+             f"(YEAR(TODAY())-{RETIREMENT_START_CELL})/{RAMP_LENGTH_CELL})",
+             PERCENT_FMT, is_summary=True)
+CURRENT_TARGET_PCT_ROW = r
+r += 1
+write_kv_row(r, "Target Safety Anchor Balance (Today)",
+             f"={ADJUSTED_WEALTH_CELL}*B{CURRENT_TARGET_PCT_ROW}", CURRENCY_FMT, is_summary=True)
+r += 1
+
+ws3.cell(row=r, column=1,
+          value="Sequence-of-Returns-Risk (SRR) Shield: the G Fund target ramps down linearly from the "
+                "Starting % to the Ending % over the Ramp Length, then holds flat -- SRR is concentrated in "
+                "the first years of retirement, so the shield is largest when it matters most and eases as "
+                "that window passes. Each year's actual target is computed per-year in the Annual SRR Hurdle "
+                "Model below and drives the Quarterly Refill Engine's 'Target Safety Anchor Balance (This "
+                "Year)' column, scaled against that year's Current Predicted Wealth (P_track), not a value "
+                "frozen at Year 1. The row above is only a live snapshot of today's applicable target for "
+                "quick reference.")
+ws3.cell(row=r, column=1).font = italic_note_font
+CONFIG_NOTE_ROW = r
+r += 2  # blank spacer row
 
 # ---- THE QUARTERLY REFILL ENGINE (primary output) ----
-QUARTERLY_BANNER_ROW = 11
+QUARTERLY_BANNER_ROW = r
 ws3.cell(row=QUARTERLY_BANNER_ROW, column=1,
           value="THE QUARTERLY REFILL ENGINE — PRIMARY OUTPUT: RECOMMENDED TSP TOP-UP TRANSFER")
 ws3.merge_cells(start_row=QUARTERLY_BANNER_ROW, start_column=1, end_row=QUARTERLY_BANNER_ROW, end_column=9)
@@ -549,8 +670,11 @@ ws3.row_dimensions[QUARTERLY_HEADER_ROW].height = 40
 QUARTER_LABELS = ["Q1", "Q2", "Q3", "Q4"]
 QUARTER_MONTH_SLICES = [(0, 3), (3, 6), (6, 9), (9, 12)]
 
-QUARTERLY_DATA_START = QUARTERLY_HEADER_ROW + 1  # row 13
-ANNUAL_DATA_START = 57  # fixed layout constant, defined by the annual table built below
+QUARTERLY_DATA_START = QUARTERLY_HEADER_ROW + 1
+QUARTERLY_DATA_END = QUARTERLY_DATA_START + 4 * len(YEARS) - 1
+ANNUAL_BANNER_ROW = QUARTERLY_DATA_END + 3
+ANNUAL_HEADER_ROW = ANNUAL_BANNER_ROW + 1
+ANNUAL_DATA_START = ANNUAL_HEADER_ROW + 1
 
 for i, year in enumerate(YEARS):
     var_log_row = DATA_START_ROW_1 + i
@@ -569,14 +693,14 @@ for i, year in enumerate(YEARS):
         )
 
         d_cell = style_body_cell(ws3, r, 4, border=border)
-        d_cell.value = f"=E{annual_row}"
+        d_cell.value = f"=G{annual_row}"
         d_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
         e_cell = style_body_cell(ws3, r, 5, number_format=CURRENCY_FMT, border=border)
         e_cell.value = f"={G_FUND_BALANCE_CELL}" if r == QUARTERLY_DATA_START else f"=H{r - 1}"
 
         i_cell = style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT, border=border)
-        i_cell.value = f"=F{annual_row}*D{annual_row}"
+        i_cell.value = f"=H{annual_row}*D{annual_row}"
 
         f_cell = style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT, bold=True,
                                    fill=accent_fill, border=border)
@@ -589,35 +713,31 @@ for i, year in enumerate(YEARS):
 
         ws3.row_dimensions[r].height = 28
 
-QUARTERLY_DATA_END = QUARTERLY_DATA_START + 4 * len(YEARS) - 1  # row 47
-
 # ---- ANNUAL SRR HURDLE MODEL (gates the quarterly engine above) ----
-ANNUAL_BANNER_ROW = QUARTERLY_DATA_END + 3  # row 50
 ws3.cell(row=ANNUAL_BANNER_ROW, column=1,
           value="ANNUAL SRR HURDLE MODEL — STRATEGIC PACING CHECK (GATES THE QUARTERLY REFILL ABOVE)")
-ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=6)
-for col in range(1, 7):
+ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=8)
+for col in range(1, 9):
     c = ws3.cell(row=ANNUAL_BANNER_ROW, column=col)
     c.font = section_font
     c.fill = section_fill
     c.border = thin_border
 ws3.row_dimensions[ANNUAL_BANNER_ROW].height = 20
 
-ANNUAL_HEADER_ROW = ANNUAL_BANNER_ROW + 1  # row 56
 annual_headers = [
     "Year",
     "Total Annual Hurdle Rate",
     "Annual Outflows (W_t)",
-    "Simulated Target Portfolio (P_track)",
+    "Current Predicted Wealth (P_track)",
+    "Original Predicted Wealth (Freeze By Hand Once)",
+    "Actual Balance (Logged)",
     "Performance Logic Trigger",
     "Safety Anchor % (This Year)",
 ]
 for idx, h in enumerate(annual_headers, start=1):
     ws3.cell(row=ANNUAL_HEADER_ROW, column=idx, value=h)
 style_header_row(ws3, ANNUAL_HEADER_ROW, 1, len(annual_headers))
-ws3.row_dimensions[ANNUAL_HEADER_ROW].height = 32
-
-assert ANNUAL_HEADER_ROW + 1 == ANNUAL_DATA_START, "ANNUAL_DATA_START constant must match actual layout"
+ws3.row_dimensions[ANNUAL_HEADER_ROW].height = 40
 
 for i, year in enumerate(YEARS):
     r = ANNUAL_DATA_START + i
@@ -628,31 +748,43 @@ for i, year in enumerate(YEARS):
     style_body_cell(ws3, r, 3, number_format=CURRENCY_FMT).value = f"='Variables_And_Log'!E{var_log_row}"
 
     if i == 0:
-        target_formula = f"=ROUND(($B$1*B{r})-C{r},2)"
+        target_formula = f"=ROUND(({ADJUSTED_WEALTH_CELL}*B{r})-C{r},2)"
     else:
         target_formula = f"=ROUND((D{r - 1}*B{r})-C{r},2)"
     style_body_cell(ws3, r, 4, number_format=CURRENCY_FMT).value = target_formula
 
+    # Mirrors Current (D) until you freeze it: once your real starting balances and
+    # assumptions are in Google Sheets, select this column and Paste Special -> Values
+    # Only over itself, one time, so it stops moving and becomes your fixed baseline.
+    style_body_cell(ws3, r, 5, number_format=CURRENCY_FMT).value = f"=D{r}"
+
+    # NA() rather than blank/0 so an unlogged year shows as a true gap on the
+    # Graph tab's chart instead of a phantom zero-height bar.
+    style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT).value = (
+        f"=IF('Variables_And_Log'!{ACTUAL_BALANCE_COL_LETTER}{var_log_row}=\"\",NA(),"
+        f"'Variables_And_Log'!{ACTUAL_BALANCE_COL_LETTER}{var_log_row})"
+    )
+
     trigger_formula = (
-        f'=IF(B$1>=D{r},'
+        f'=IF({ADJUSTED_WEALTH_CELL}>=D{r},'
         f'"✅ GOOD: Execute T2065 Rebalance & Rollover to TSP",'
         f'"⚠️ POOR: Freeze Equities. Draw Down G Fund")'
     )
-    trig_cell = style_body_cell(ws3, r, 5)
+    trig_cell = style_body_cell(ws3, r, 7)
     trig_cell.value = trigger_formula
     trig_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    # Step function: elevated Red Zone % while this row's year is still within Red Zone
-    # Length years of Retirement Start Year, Post-Red-Zone % afterward. (Age at this row
-    # = B3 + (A{r}-B2), so "years since retirement start" and "years since Age B3" are
-    # the same test -- Age at Retirement Start (B3) doesn't need to appear in the formula
-    # itself, but stays on the sheet since it's what makes the red-zone window meaningful
-    # to a human reader, e.g. "age 63 to 73".)
-    style_body_cell(ws3, r, 6, number_format=PERCENT_FMT).value = f"=IF(A{r}-$B$2<$B$4,$B$5,$B$6)"
+    # Linear ramp: Starting Target % at Retirement Start Year, sliding to Ending Target %
+    # over Ramp Length years, then flat at Ending Target % forever after.
+    style_body_cell(ws3, r, 8, number_format=PERCENT_FMT).value = (
+        f"=IF(A{r}-{RETIREMENT_START_CELL}>={RAMP_LENGTH_CELL},{ENDING_TARGET_CELL},"
+        f"{STARTING_TARGET_CELL}+({ENDING_TARGET_CELL}-{STARTING_TARGET_CELL})*"
+        f"(A{r}-{RETIREMENT_START_CELL})/{RAMP_LENGTH_CELL})"
+    )
 
     ws3.row_dimensions[r].height = 28
 
-ANNUAL_DATA_END = ANNUAL_DATA_START + len(YEARS) - 1  # row 61
+ANNUAL_DATA_END = ANNUAL_DATA_START + len(YEARS) - 1
 
 # ---- EXTRA CAPACITY INDICATORS ----
 KPI_HEADER_ROW = ANNUAL_DATA_END + 2  # row 63
@@ -796,13 +928,15 @@ ws3.freeze_panes = f"A{QUARTERLY_DATA_START}"
 # --------------------------------------------------------------------------
 autofit_columns(ws1, skip_rows={note_row_1, legend_row_1})
 autofit_columns(ws2, skip_rows={note_row_2, legend_row_2})
-autofit_columns(ws3, skip_rows={4, note_row_3, legend_row_3})
+autofit_columns(ws3, skip_rows={ADJUSTED_WEALTH_ROW + 1, CONFIG_NOTE_ROW, note_row_3, legend_row_3})
 for ws in (ws1, ws2, ws3):
     ws.sheet_view.showGridLines = True
 
 ws1.column_dimensions["A"].width = 14
 for col_letter in MONTH_COLS:
     ws1.column_dimensions[col_letter].width = 12
+ws1.column_dimensions[ROTH_CONVERSION_COL_LETTER].width = 18
+ws1.column_dimensions[ACTUAL_BALANCE_COL_LETTER].width = 20
 
 ws3.column_dimensions["A"].width = 42
 ws3.column_dimensions["B"].width = 14
@@ -813,6 +947,56 @@ ws3.column_dimensions["F"].width = 22
 ws3.column_dimensions["G"].width = 22
 ws3.column_dimensions["H"].width = 22
 ws3.column_dimensions["I"].width = 22
+
+# --------------------------------------------------------------------------
+# TAB 4: Graph
+# --------------------------------------------------------------------------
+ws4 = wb.create_sheet("Graph")
+
+ws4.cell(row=1, column=1, value="HOUSEHOLD WEALTH — ORIGINAL VS. CURRENT PROJECTION VS. ACTUAL")
+ws4.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
+for col in range(1, 7):
+    c = ws4.cell(row=1, column=col)
+    c.font = header_font
+    c.fill = header_fill
+    c.border = thin_border
+ws4.row_dimensions[1].height = 24
+
+write_paragraph(
+    ws4, 3,
+    "This chart reads directly from the Annual SRR Hurdle Model table on The_Refill_Engine -- there is "
+    "nothing to edit here. Original Predicted Wealth only means something once you've frozen it there (see "
+    "the note on that column); Actual Balance only shows for years you've logged on Variables_And_Log.",
+    col=1, chars_per_line=100,
+)
+
+chart = BarChart()
+chart.type = "col"
+chart.grouping = "clustered"
+chart.overlap = -10
+chart.title = "Household Wealth: Original vs. Current Projection vs. Actual"
+chart.y_axis.title = "Household Wealth ($)"
+chart.y_axis.numFmt = CURRENCY_FMT
+chart.x_axis.title = "Year"
+chart.height = 12
+chart.width = 26
+
+cats = Reference(ws3, min_col=1, min_row=ANNUAL_DATA_START, max_row=ANNUAL_DATA_END)
+data_original = Reference(ws3, min_col=5, min_row=ANNUAL_HEADER_ROW, max_row=ANNUAL_DATA_END)
+data_current = Reference(ws3, min_col=4, min_row=ANNUAL_HEADER_ROW, max_row=ANNUAL_DATA_END)
+data_actual = Reference(ws3, min_col=6, min_row=ANNUAL_HEADER_ROW, max_row=ANNUAL_DATA_END)
+
+chart.add_data(data_original, titles_from_data=True)
+chart.add_data(data_current, titles_from_data=True)
+chart.add_data(data_actual, titles_from_data=True)
+chart.set_categories(cats)
+
+for series, color in zip(chart.series, (TITLE_GRAY, NAVY, "E8A33D")):
+    series.graphicalProperties.solidFill = color
+
+ws4.add_chart(chart, "A6")
+
+enable_gridlines(ws4)
 
 wb.save("household_portfolio_engine.xlsx")
 print("Wrote household_portfolio_engine.xlsx")

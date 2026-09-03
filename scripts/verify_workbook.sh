@@ -1,8 +1,24 @@
 #!/bin/bash
 # Opens an .xlsx in Microsoft Excel, forces a full recalculation, and scans
-# every sheet's used range for formula errors (#REF!, #VALUE!, #DIV/0!,
-# etc). openpyxl never evaluates formulas, so this is the only reliable way
-# to catch a broken formula before it's committed.
+# every sheet's used range for formula errors that surface as literal text
+# (#REF!, #VALUE!, #DIV/0!, etc). openpyxl never evaluates formulas, so this
+# is a cheap sanity net before committing.
+#
+# KNOWN LIMITATION: Excel's AppleScript bridge returns a genuine formula
+# error from `value of range` as the literal AppleScript `missing value`,
+# indistinguishable from a truly blank cell -- confirmed by deliberately
+# introducing a #DIV/0! and reading it back. There is no reliable, safe way
+# found so far to recover the error token generically (a `save workbook as`
+# + re-read via openpyxl(data_only=True) round trip was attempted; probing
+# further AppleScript-side, e.g. bulk `formula of` over a multi-cell range
+# after a bad cross-sheet reference, crashed Excel outright). So this scan
+# only catches an error in the rare case it surfaces as text -- it is not a
+# substitute for spot-checking key computed cells by hand after a change,
+# which remains the reliable method.
+#
+# #N/A is deliberately NOT treated as an error -- the household-portfolio
+# workbooks use NA() on purpose (e.g. an unlogged year's Actual Balance) so
+# a chart shows a true gap instead of a phantom zero.
 #
 # Never touches any other workbook already open in Excel -- it opens the
 # given file, closes exactly that file (by name, without saving), and
@@ -45,7 +61,7 @@ tell application "Microsoft Excel"
         repeat with rowVals in allVals
             repeat with v in rowVals
                 if class of v is string then
-                    if v starts with "#" then
+                    if v is in {"#REF!", "#VALUE!", "#DIV/0!", "#NAME?", "#NULL!", "#NUM!", "#SPILL!", "#CALC!"} then
                         set errCount to errCount + 1
                         log "ERROR in " & wsName & ": " & v
                     end if
