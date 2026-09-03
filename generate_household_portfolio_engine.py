@@ -1,21 +1,30 @@
 """
 generate_household_portfolio_engine.py
 
-Builds 'household_portfolio_engine.xlsx' -- a four-tab household retirement
+Builds 'household_portfolio_engine.xlsx' -- a five-tab household retirement
 income engine implementing a Sequence-of-Returns-Risk (SRR) shield strategy:
 
   1. Documentation       -- motivation, how the tabs fit together, a
                              quarterly checklist, the color legend, and a
                              glossary. Meant to be read first.
-  2. Variables_And_Log   -- annual COLA/hurdle inputs + a Jan-Dec monthly
-                             TSP -> checking payment log per year (2026-2035)
+  2. Variables_And_Log   -- annual COLA/hurdle inputs, a Jan-Dec monthly
+                             TSP -> checking payment log, an annual Roth
+                             conversion tax-cost log, and an annual Actual
+                             Balance log (2026-2035).
   3. Account_Tracker     -- unified household net worth across all accounts
-  4. The_Refill_Engine   -- Quarterly Refill Engine (the sheet's primary
-                             output: how much to transfer from a non-TSP
-                             account into the TSP G Fund each quarter),
-                             an annual SRR hurdle model that gates it,
-                             capacity KPIs, and the Emergency Liquidity
-                             Protocol.
+  4. The_Refill_Engine   -- a wealth-adjustment block (isolates the tax cost
+                             of Roth conversions from market performance), a
+                             Default/Override/Effective block of configured
+                             inputs, the Quarterly Refill Engine (the sheet's
+                             primary output: how much to transfer from a
+                             non-TSP account into the TSP G Fund each
+                             quarter), an annual SRR hurdle model that gates
+                             it (a linear G Fund target ramp, not a step
+                             function), capacity KPIs, and the Emergency
+                             Liquidity Protocol.
+  5. Graph                -- a read-only chart (Original vs. Current vs.
+                             Actual household wealth by year), kept off the
+                             data-entry tabs.
 
 This script is meant to be run ONCE to scaffold the workbook. The generated
 .xlsx is then imported into Google Sheets and becomes the long-lived, hand-
@@ -23,7 +32,9 @@ maintained document -- real account balances and payment amounts get typed
 in there, not re-generated here. Account_Tracker balances below are generic
 placeholders on purpose; do not put real dollar figures into this script.
 
-Run:  python3 generate_household_portfolio_engine.py
+Run:        python3 generate_household_portfolio_engine.py
+Verify:     make test  (see scripts/verify_workbook.sh and
+            scripts/verify_household_engine.sh)
 """
 
 import math

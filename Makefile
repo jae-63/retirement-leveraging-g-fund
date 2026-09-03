@@ -4,11 +4,16 @@
 #                (only actually runs a generator if its .py is newer than
 #                the .xlsx it produces).
 #   make test    open each generated workbook in Microsoft Excel, force a
-#                full recalculation, and check the formulas actually
-#                evaluate correctly -- openpyxl never evaluates formulas,
-#                so this is the only reliable way to catch a broken one.
-#                Requires macOS + Microsoft Excel. Never touches any other
-#                workbook you already have open.
+#                full recalculation, check the formulas actually evaluate
+#                correctly, and run a curated set of behavioral checks
+#                (household_portfolio_engine.xlsx only, for now) that mutate
+#                specific cells and assert on the recalculated result --
+#                openpyxl never evaluates formulas, so this is the only
+#                reliable way to catch a broken one, and the bugs this
+#                project has actually hit lived in how formulas interact,
+#                not in any single Python function. Requires macOS +
+#                Microsoft Excel. Never touches any other workbook you
+#                already have open.
 #   make all     build then test (the default).
 #   make clean   remove Python build artifacts (never touches the .xlsx
 #                files -- they're committed, hand-maintained documents).
@@ -24,7 +29,7 @@ TRACKER_XLSX   := household_portfolio_engine.xlsx
 DEMO_SCRIPT    := generate_scenario_demo.py
 DEMO_XLSX      := household_portfolio_scenario_demo.xlsx
 
-.PHONY: all build test verify-tracker verify-demo clean
+.PHONY: all build test verify-tracker verify-tracker-behavior verify-demo clean
 
 all: build test
 
@@ -36,10 +41,13 @@ $(TRACKER_XLSX): $(TRACKER_SCRIPT)
 $(DEMO_XLSX): $(DEMO_SCRIPT)
 	$(PYTHON) $(DEMO_SCRIPT)
 
-test: verify-tracker verify-demo
+test: verify-tracker verify-tracker-behavior verify-demo
 
 verify-tracker: $(TRACKER_XLSX)
 	scripts/verify_workbook.sh $(TRACKER_XLSX) Documentation Variables_And_Log Account_Tracker The_Refill_Engine Graph
+
+verify-tracker-behavior: $(TRACKER_XLSX)
+	scripts/verify_household_engine.sh $(TRACKER_XLSX)
 
 verify-demo: $(DEMO_XLSX)
 	scripts/verify_scenario_demo.sh $(DEMO_XLSX)
