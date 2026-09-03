@@ -33,9 +33,9 @@ tell application "Microsoft Excel"
     open (POSIX file "$XLSX_PATH")
     calculate full
 
-    -- generic formula-error scan across all four tabs
+    -- generic formula-error scan across all five tabs
     set errCount to 0
-    repeat with wsName in {"Documentation", "Variables_And_Log", "Account_Tracker", "The_Refill_Engine"}
+    repeat with wsName in {"Documentation", "Variables_And_Log", "Account_Tracker", "The_Refill_Engine", "Graph"}
         set w to worksheet wsName of active workbook
         set allVals to value of (used range of w)
         repeat with rowVals in allVals

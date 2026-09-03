@@ -39,6 +39,7 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
+from openpyxl.chart import BarChart, Reference
 
 # --------------------------------------------------------------------------
 # Corporate "Classic Navy" palette (matches household_portfolio_engine.xlsx)
@@ -263,7 +264,7 @@ write_paragraph(
 )
 r += 2
 
-write_section_banner(ws0, r, "HOW THE FOUR TABS WORK TOGETHER", 2)
+write_section_banner(ws0, r, "HOW THE FIVE TABS WORK TOGETHER", 2)
 r += 1
 for para in (
     "Documentation (this tab) -- What this demo shows, how to use the scenario selector, the disclaimer "
@@ -277,10 +278,16 @@ for para in (
     "the live tracker, this is not an ongoing snapshot -- it's the starting point that The_Refill_Engine "
     "projects forward under the selected scenario.",
 
-    "The_Refill_Engine -- The decision-making tab, plus the scenario selector. The Quarterly Refill Engine "
-    "table is the headline output. The Annual SRR Hurdle Model below it now also simulates actual "
-    "household wealth forward year by year under the selected scenario and compares it to the hurdle "
-    "target, which is what drives GOOD vs. POOR here.",
+    "The_Refill_Engine -- The decision-making tab, plus the scenario selector. A block of configured "
+    "inputs (Retirement Start Year, Ramp Length, the G Fund target percentages, etc.) each carry a "
+    "Default, an optional Override, and the resulting Effective value everything else on the tab actually "
+    "uses. The Quarterly Refill Engine table is the headline output. The Annual SRR Hurdle Model below it "
+    "simulates actual household wealth forward year by year under the selected scenario and compares it "
+    "to the hurdle target, which is what drives GOOD vs. POOR here.",
+
+    "Graph -- A single chart, read-only, pulling straight from The_Refill_Engine's Annual SRR Hurdle "
+    "Model: Simulated Actual Household Wealth vs. the hurdle target (P_track), by year, for whichever "
+    "scenario is currently selected.",
 ):
     write_paragraph(ws0, r, para, chars_per_line=DOC_CHARS_PER_LINE)
     r += 1
@@ -331,13 +338,18 @@ GLOSSARY = [
             "sale of depreciated assets."),
     ("TSP G Fund", "The federal Thrift Savings Plan's government-securities fund: principal-protected, "
                     "instantly liquid, and the household's operating cash vault."),
-    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain. Set as a step function (on "
-                       "The_Refill_Engine): a higher percentage through the SRR \"red zone\" -- the first "
-                       "several years of retirement -- then a lower one afterward, applied each year to "
-                       "that year's P_track rather than a frozen snapshot."),
-    ("Red Zone", "The first several years of retirement, when a bad sequence of market returns does the "
-                 "most lasting damage to a portfolio. The Safety Anchor holds a higher percentage during "
-                 "this window."),
+    ("Safety Anchor", "The G Fund cash buffer this engine tries to maintain. Ramps linearly (on "
+                       "The_Refill_Engine) from a Starting % down to an Ending % over the Ramp Length, "
+                       "then holds flat -- largest during the early years when SRR risk is heavily "
+                       "front-loaded, easing as that window passes. Applied each year to that year's "
+                       "P_track rather than a frozen snapshot."),
+    ("Ramp Length", "How many years the G Fund target percentage takes to slide from its Starting % to "
+                     "its Ending %, before holding flat. A configured input on The_Refill_Engine."),
+    ("Default / Override / Effective", "The three-column pattern used for every configured input on "
+                                        "The_Refill_Engine. Default is the built-in value; Override is "
+                                        "blank unless you want to change it; Effective is whichever one "
+                                        "is actually in force, and is what every other formula on the tab "
+                                        "references."),
     ("Conduit", "A Traditional IRA used as a pass-through for pre-tax rollovers back into the TSP."),
     ("Allocation Mix", "Each account's share of total household net worth, shown on Account_Tracker."),
 ]
@@ -536,6 +548,34 @@ def write_kv_row(row, label, value, number_format, is_input=False, is_summary=Fa
     return val_cell
 
 
+def write_config_row(row, label, default_value, number_format):
+    """A configured input laid out as Default (col B) / Override (col C,
+    blank = use Default) / Effective (col D, the absolute ref every other
+    formula on this sheet should point at). Matches household_portfolio_
+    engine.xlsx's The_Refill_Engine layout."""
+    label_cell = ws3.cell(row=row, column=1, value=label)
+    label_cell.font = label_font
+    label_cell.border = thin_border
+
+    default_cell = ws3.cell(row=row, column=2, value=default_value)
+    default_cell.number_format = number_format
+    default_cell.font = body_font
+    default_cell.border = thin_border
+
+    override_cell = ws3.cell(row=row, column=3)
+    override_cell.number_format = number_format
+    override_cell.font = body_font
+    override_cell.border = thin_border
+    mark_input(override_cell)
+
+    effective_cell = ws3.cell(row=row, column=4, value=f'=IF(C{row}="",B{row},C{row})')
+    effective_cell.number_format = number_format
+    effective_cell.font = bold_body_font
+    effective_cell.fill = accent_fill
+    effective_cell.border = thin_border
+    return f"$D${row}"
+
+
 SCENARIO_ROW = 1
 write_kv_row(SCENARIO_ROW, "Scenario Selector", "Bear", "@", is_input=True)
 scenario_dv = DataValidation(type="list", formula1='"Bear,Bull,Choppy"', allow_blank=False)
@@ -546,30 +586,59 @@ ws3.cell(row=SCENARIO_ROW, column=3,
 ws3.cell(row=SCENARIO_ROW, column=3).font = italic_note_font
 ws3.merge_cells(start_row=SCENARIO_ROW, start_column=3, end_row=SCENARIO_ROW, end_column=9)
 
-write_kv_row(3, "Starting Household Wealth (Year 1 Opening)", f"={TOTAL_NET_WORTH_REF}", CURRENCY_FMT, is_summary=True)
-write_kv_row(4, "Retirement Start Year", 2026, "0", is_input=True)
-write_kv_row(5, "Age at Retirement Start", 63, "0", is_input=True)
-write_kv_row(6, "Red Zone Length (Years)", 10, "0", is_input=True)
-write_kv_row(7, "Red Zone Target % (elevated, early retirement)", 0.35, PERCENT_FMT, is_input=True)
-write_kv_row(8, "Post-Red-Zone Target % (steady state)", 0.25, PERCENT_FMT, is_input=True)
-write_kv_row(9, "Current Safety Anchor %", "=IF(YEAR(TODAY())-B4<B6,B7,B8)", PERCENT_FMT, is_summary=True)
-write_kv_row(10, "Target Safety Anchor Balance (Year 1 Opening)", "=B3*B9", CURRENCY_FMT, is_summary=True)
+r = 3
+write_kv_row(r, "Starting Household Wealth (Year 1 Opening)", f"={TOTAL_NET_WORTH_REF}", CURRENCY_FMT, is_summary=True)
+STARTING_WEALTH_ROW = r
+r += 2  # blank spacer row
 
-ws3.cell(row=11, column=1,
-          value="Sequence-of-Returns-Risk (SRR) Shield: this engine uses a step function, not a flat "
-                "percentage. SRR is concentrated in the first years of retirement (the \"red zone\"), when a "
-                "bad sequence does the most damage; research supports holding a larger safety anchor through "
-                "that window, then a smaller one afterward. Each year's actual target -- Red Zone % while "
-                "Year < Retirement Start Year + Red-Zone-Length, Post-Red-Zone % after -- is computed "
-                "per-year in the Annual SRR Hurdle Model below and drives the Quarterly Refill Engine's "
-                "'Target Safety Anchor Balance (This Year)' column, scaled against that year's simulated "
-                "wealth path, not a value frozen at Year 1. Row 10 above is only a Year-1 snapshot for quick "
-                "reference. In this demo, GOOD/POOR below is driven by the Scenario Selector above, not a "
-                "live account snapshot.")
-ws3.cell(row=11, column=1).font = italic_note_font
+write_section_banner(ws3, r, "CONFIGURED INPUTS — DEFAULT / OVERRIDE / EFFECTIVE", 4)
+r += 1
+config_header_row = r
+for idx, h in enumerate(["Input", "Default", "Override (blank = use Default)", "Effective (used below)"], start=1):
+    ws3.cell(row=config_header_row, column=idx, value=h)
+style_header_row(ws3, config_header_row, 1, 4)
+ws3.row_dimensions[config_header_row].height = 28
+r += 1
+
+RETIREMENT_START_CELL = write_config_row(r, "Retirement Start Year", 2026, "0")
+r += 1
+AGE_AT_START_CELL = write_config_row(r, "Age at Retirement Start", 63, "0")
+r += 1
+RAMP_LENGTH_CELL = write_config_row(r, "Ramp Length (Years)", 10, "0")
+r += 1
+STARTING_TARGET_CELL = write_config_row(
+    r, "Starting G Fund Target % (elevated, early retirement)", 0.30, PERCENT_FMT)
+r += 1
+ENDING_TARGET_CELL = write_config_row(r, "Ending G Fund Target % (steady state)", 0.20, PERCENT_FMT)
+r += 1
+r += 1  # blank spacer row
+
+write_kv_row(r, "Current G Fund Target % (Today)",
+             f"=IF(YEAR(TODAY())-{RETIREMENT_START_CELL}>={RAMP_LENGTH_CELL},{ENDING_TARGET_CELL},"
+             f"{STARTING_TARGET_CELL}+({ENDING_TARGET_CELL}-{STARTING_TARGET_CELL})*"
+             f"(YEAR(TODAY())-{RETIREMENT_START_CELL})/{RAMP_LENGTH_CELL})",
+             PERCENT_FMT, is_summary=True)
+CURRENT_TARGET_PCT_ROW = r
+r += 1
+write_kv_row(r, "Target Safety Anchor Balance (Year 1 Opening)",
+             f"=B{STARTING_WEALTH_ROW}*B{CURRENT_TARGET_PCT_ROW}", CURRENCY_FMT, is_summary=True)
+r += 1
+
+ws3.cell(row=r, column=1,
+          value="Sequence-of-Returns-Risk (SRR) Shield: the G Fund target ramps down linearly from the "
+                "Starting % to the Ending % over the Ramp Length, then holds flat -- SRR is concentrated in "
+                "the first years of retirement, so the shield is largest when it matters most and eases as "
+                "that window passes. Each year's actual target is computed per-year in the Annual SRR Hurdle "
+                "Model below and drives the Quarterly Refill Engine's 'Target Safety Anchor Balance (This "
+                "Year)' column, scaled against that year's simulated wealth path, not a value frozen at "
+                "Year 1. The row above is only a Year-1 snapshot for quick reference. In this demo, GOOD/"
+                "POOR below is driven by the Scenario Selector above, not a live account snapshot.")
+ws3.cell(row=r, column=1).font = italic_note_font
+CONFIG_NOTE_ROW = r
+r += 2  # blank spacer row
 
 # ---- THE QUARTERLY REFILL ENGINE (primary output) ----
-QUARTERLY_BANNER_ROW = 13
+QUARTERLY_BANNER_ROW = r
 ws3.cell(row=QUARTERLY_BANNER_ROW, column=1,
           value="THE QUARTERLY REFILL ENGINE — PRIMARY OUTPUT: RECOMMENDED TSP TOP-UP TRANSFER")
 ws3.merge_cells(start_row=QUARTERLY_BANNER_ROW, start_column=1, end_row=QUARTERLY_BANNER_ROW, end_column=9)
@@ -704,7 +773,13 @@ for i, year in enumerate(YEARS):
     trig_cell.value = trigger_formula
     trig_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    style_body_cell(ws3, r, 8, number_format=PERCENT_FMT).value = f"=IF(A{r}-$B$4<$B$6,$B$7,$B$8)"
+    # Linear ramp: Starting Target % at Retirement Start Year, sliding to Ending Target %
+    # over Ramp Length years, then flat at Ending Target % forever after.
+    style_body_cell(ws3, r, 8, number_format=PERCENT_FMT).value = (
+        f"=IF(A{r}-{RETIREMENT_START_CELL}>={RAMP_LENGTH_CELL},{ENDING_TARGET_CELL},"
+        f"{STARTING_TARGET_CELL}+({ENDING_TARGET_CELL}-{STARTING_TARGET_CELL})*"
+        f"(A{r}-{RETIREMENT_START_CELL})/{RAMP_LENGTH_CELL})"
+    )
 
     ws3.row_dimensions[r].height = 28
 
@@ -852,7 +927,7 @@ ws3.freeze_panes = f"A{QUARTERLY_DATA_START}"
 # --------------------------------------------------------------------------
 autofit_columns(ws1, skip_rows={note_row_1, legend_row_1})
 autofit_columns(ws2, skip_rows={note_row_2, legend_row_2})
-autofit_columns(ws3, skip_rows={11, note_row_3, legend_row_3})
+autofit_columns(ws3, skip_rows={CONFIG_NOTE_ROW, note_row_3, legend_row_3})
 for ws in (ws1, ws2, ws3):
     ws.sheet_view.showGridLines = True
 
@@ -871,6 +946,55 @@ ws3.column_dimensions["F"].width = 30
 ws3.column_dimensions["G"].width = 22
 ws3.column_dimensions["H"].width = 22
 ws3.column_dimensions["I"].width = 22
+
+# --------------------------------------------------------------------------
+# TAB 4: Graph
+# --------------------------------------------------------------------------
+ws4 = wb.create_sheet("Graph")
+
+ws4.cell(row=1, column=1, value="SIMULATED WEALTH VS. HURDLE — SELECTED SCENARIO")
+ws4.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
+for col in range(1, 7):
+    c = ws4.cell(row=1, column=col)
+    c.font = header_font
+    c.fill = header_fill
+    c.border = thin_border
+ws4.row_dimensions[1].height = 24
+
+write_paragraph(
+    ws4, 3,
+    "This chart reads directly from the Annual SRR Hurdle Model table on The_Refill_Engine -- there is "
+    "nothing to edit here. It redraws automatically for whichever scenario is selected there: watch "
+    "Simulated Actual Household Wealth stay under the hurdle (P_track) for the whole Bear run, clear it "
+    "every year under Bull, and cross back and forth under Choppy.",
+    col=1, chars_per_line=100,
+)
+
+chart = BarChart()
+chart.type = "col"
+chart.grouping = "clustered"
+chart.overlap = -10
+chart.title = "Simulated Actual Household Wealth vs. Hurdle Target (P_track)"
+chart.y_axis.title = "Household Wealth ($)"
+chart.y_axis.numFmt = CURRENCY_FMT
+chart.x_axis.title = "Year"
+chart.height = 12
+chart.width = 26
+
+cats = Reference(ws3, min_col=1, min_row=ANNUAL_DATA_START, max_row=ANNUAL_DATA_END)
+data_target = Reference(ws3, min_col=4, min_row=ANNUAL_HEADER_ROW, max_row=ANNUAL_DATA_END)
+data_simulated = Reference(ws3, min_col=6, min_row=ANNUAL_HEADER_ROW, max_row=ANNUAL_DATA_END)
+
+chart.add_data(data_target, titles_from_data=True)
+chart.add_data(data_simulated, titles_from_data=True)
+chart.set_categories(cats)
+
+for series, color in zip(chart.series, (TITLE_GRAY, NAVY)):
+    series.graphicalProperties.solidFill = color
+
+ws4.add_chart(chart, "A6")
+
+enable_gridlines(ws4)
 
 wb.save("household_portfolio_scenario_demo.xlsx")
 print("Wrote household_portfolio_scenario_demo.xlsx")
