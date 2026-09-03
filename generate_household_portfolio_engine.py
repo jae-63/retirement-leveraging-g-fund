@@ -242,10 +242,12 @@ for para in (
     "Ramp Length, the G Fund target percentages, etc.) each carry a Default, an optional Override, and the "
     "resulting Effective value everything else on the tab actually uses. The Quarterly Refill Engine table "
     "is the headline output -- each quarter it tells you how much (if anything) to move from a private "
-    "pre-tax account into the TSP G Fund. Below that, the Annual SRR Hurdle Model is the strategic gauge "
-    "that decides GOOD vs. POOR for the year (using wealth adjusted to add back any logged Roth conversion "
-    "cost, so a planned tax bill is never mistaken for a market downturn), and the Emergency Liquidity "
-    "Protocol tells you, in a full-blown crisis, exactly which account to draw from next.",
+    "pre-tax account into the TSP G Fund. Below that, the Annual SRR Hurdle Model is the strategic gauge: "
+    "GOOD vs. POOR for the year is decided using wealth adjusted to add back any logged Roth conversion "
+    "cost, so a planned tax bill is never mistaken for a market downturn -- but every real dollar amount "
+    "(the Safety Anchor balance, recommended transfers) is sized off real, unadjusted wealth, since the "
+    "G Fund can only ever hold real dollars. The Emergency Liquidity Protocol tells you, in a full-blown "
+    "crisis, exactly which account to draw from next.",
 
     "Graph -- A single chart, read-only, pulling straight from The_Refill_Engine's Annual SRR Hurdle Model: "
     "Original Predicted Wealth vs. Current Predicted Wealth vs. Actual Balance, by year. Kept on its own "
@@ -338,14 +340,20 @@ GLOSSARY = [
                                         "unless you want to change it; Effective is whichever one is actually "
                                         "in force, and is what every other formula on the tab references."),
     ("Adjusted Actual Wealth", "Account_Tracker's live total plus the cumulative Roth conversion tax cost "
-                                "logged to date -- what the GOOD/POOR trigger and Safety Anchor sizing "
-                                "actually use, so a planned conversion's tax bill isn't mistaken for a "
-                                "market downturn."),
+                                "logged to date. Used ONLY for the GOOD/POOR trigger comparison (against "
+                                "Market Performance Basis, below), so a planned conversion's tax bill isn't "
+                                "mistaken for a market downturn. Never used to size a real dollar amount -- "
+                                "see Market Performance Basis."),
+    ("Market Performance Basis", "A column on the Annual SRR Hurdle Model, seeded from Adjusted Actual "
+                                  "Wealth instead of the real balance -- the same hurdle-rate trajectory as "
+                                  "Current Predicted Wealth (P_track), just tax-adjusted. Exists only to give "
+                                  "the GOOD/POOR trigger a fair comparison; nothing that sizes a real dollar "
+                                  "amount (Safety Anchor balance, recommended transfers) ever references it."),
     ("Original Predicted Wealth", "A column on the Annual SRR Hurdle Model that mirrors Current Predicted "
-                                   "Wealth (P_track) until you freeze it by hand (Paste Special -> Values "
-                                   "Only, once, after your real numbers are in) -- after that it stays fixed "
-                                   "as your baseline while Current keeps moving with your latest assumptions. "
-                                   "Feeds the Graph tab."),
+                                   "Wealth (P_track) -- the real, unadjusted trajectory -- until you freeze "
+                                   "it by hand (Paste Special -> Values Only, once, after your real numbers "
+                                   "are in). After that it stays fixed as your baseline while Current keeps "
+                                   "moving with your latest assumptions. Feeds the Graph tab."),
     ("Conduit", "A Traditional IRA used as a pass-through for pre-tax rollovers back into the TSP."),
     ("Rollover", "A pre-tax transfer of funds between retirement accounts (e.g. Traditional IRA to TSP) "
                  "that doesn't trigger a taxable distribution."),
@@ -586,9 +594,12 @@ ADJUSTED_WEALTH_CELL = f"$B${ADJUSTED_WEALTH_ROW}"
 r += 1
 ws3.cell(row=r, column=1,
           value="Roth conversions are funded from non-TSP accounts and planned separately from this "
-                "strategy, but their tax cost is a real, deliberate reduction in household wealth -- not a "
-                "market downturn. Adding the logged cost back here keeps the GOOD/POOR trigger and the "
-                "Safety Anchor sized against market performance only, not a planned conversion.")
+                "strategy. The converted principal is a net-zero move between accounts Account_Tracker "
+                "already reflects; only the tax cost is a real, permanent reduction in household wealth, "
+                "not a market downturn. That cost is used two different ways below, deliberately: the "
+                "GOOD/POOR trigger adds it back (so a planned tax bill can't be mistaken for a bad market), "
+                "but the Safety Anchor's dollar sizing does NOT add it back -- the G Fund can only ever hold "
+                "real dollars, so its target is sized off real wealth, never off a phantom tax refund.")
 ws3.cell(row=r, column=1).font = italic_note_font
 r += 2  # blank spacer row
 
@@ -622,7 +633,7 @@ write_kv_row(r, "Current G Fund Target % (Today)",
 CURRENT_TARGET_PCT_ROW = r
 r += 1
 write_kv_row(r, "Target Safety Anchor Balance (Today)",
-             f"={ADJUSTED_WEALTH_CELL}*B{CURRENT_TARGET_PCT_ROW}", CURRENCY_FMT, is_summary=True)
+             f"=B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{CURRENT_TARGET_PCT_ROW}", CURRENCY_FMT, is_summary=True)
 r += 1
 
 ws3.cell(row=r, column=1,
@@ -716,8 +727,8 @@ for i, year in enumerate(YEARS):
 # ---- ANNUAL SRR HURDLE MODEL (gates the quarterly engine above) ----
 ws3.cell(row=ANNUAL_BANNER_ROW, column=1,
           value="ANNUAL SRR HURDLE MODEL — STRATEGIC PACING CHECK (GATES THE QUARTERLY REFILL ABOVE)")
-ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=8)
-for col in range(1, 9):
+ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=9)
+for col in range(1, 10):
     c = ws3.cell(row=ANNUAL_BANNER_ROW, column=col)
     c.font = section_font
     c.fill = section_fill
@@ -728,11 +739,12 @@ annual_headers = [
     "Year",
     "Total Annual Hurdle Rate",
     "Annual Outflows (W_t)",
-    "Current Predicted Wealth (P_track)",
+    "Current Predicted Wealth (P_track) — Real, Unadjusted",
     "Original Predicted Wealth (Freeze By Hand Once)",
     "Actual Balance (Logged)",
     "Performance Logic Trigger",
     "Safety Anchor % (This Year)",
+    "Market Performance Basis (P_track, Adjusted for Roth Tax Cost) — Trigger Only",
 ]
 for idx, h in enumerate(annual_headers, start=1):
     ws3.cell(row=ANNUAL_HEADER_ROW, column=idx, value=h)
@@ -747,8 +759,13 @@ for i, year in enumerate(YEARS):
     style_body_cell(ws3, r, 2, number_format=PERCENT_FMT).value = f"='Variables_And_Log'!D{var_log_row}"
     style_body_cell(ws3, r, 3, number_format=CURRENCY_FMT).value = f"='Variables_And_Log'!E{var_log_row}"
 
+    # Real, unadjusted trajectory -- seeded from the raw Account_Tracker snapshot, never
+    # the Roth-tax-adjusted figure. This is what the Original-freeze column, the Graph
+    # tab, and the Safety Anchor's dollar sizing all use: the G Fund can only ever hold
+    # real dollars, so nothing that touches an actual dollar target should be inflated
+    # by a phantom tax refund that doesn't exist to hold.
     if i == 0:
-        target_formula = f"=ROUND(({ADJUSTED_WEALTH_CELL}*B{r})-C{r},2)"
+        target_formula = f"=ROUND((B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{r})-C{r},2)"
     else:
         target_formula = f"=ROUND((D{r - 1}*B{r})-C{r},2)"
     style_body_cell(ws3, r, 4, number_format=CURRENCY_FMT).value = target_formula
@@ -766,7 +783,7 @@ for i, year in enumerate(YEARS):
     )
 
     trigger_formula = (
-        f'=IF({ADJUSTED_WEALTH_CELL}>=D{r},'
+        f'=IF({ADJUSTED_WEALTH_CELL}>=I{r},'
         f'"✅ GOOD: Execute T2065 Rebalance & Rollover to TSP",'
         f'"⚠️ POOR: Freeze Equities. Draw Down G Fund")'
     )
@@ -781,6 +798,17 @@ for i, year in enumerate(YEARS):
         f"{STARTING_TARGET_CELL}+({ENDING_TARGET_CELL}-{STARTING_TARGET_CELL})*"
         f"(A{r}-{RETIREMENT_START_CELL})/{RAMP_LENGTH_CELL})"
     )
+
+    # Trigger-only basis: the SAME recursive hurdle-rate trajectory as D, but seeded from
+    # Adjusted Actual Wealth (raw + cumulative logged Roth tax cost) instead of raw wealth,
+    # so a planned tax bill can't masquerade as a market downturn in the GOOD/POOR call.
+    # Deliberately isolated to this one column -- nothing that sizes a real dollar amount
+    # (Safety Anchor balance, quarterly transfer recommendations) should ever reference it.
+    if i == 0:
+        adj_target_formula = f"=ROUND(({ADJUSTED_WEALTH_CELL}*B{r})-C{r},2)"
+    else:
+        adj_target_formula = f"=ROUND((I{r - 1}*B{r})-C{r},2)"
+    style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT).value = adj_target_formula
 
     ws3.row_dimensions[r].height = 28
 
