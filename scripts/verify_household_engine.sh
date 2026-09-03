@@ -179,10 +179,42 @@ try
         error "NA() gap: an unlogged Actual Balance year should read as a gap (missing value), got " & actualBalanceCell
     end if
 
+    -- ---- Check 6: quarterly Actual Balance logging -- the interpolated
+    -- ---- Current Predicted Wealth lands at the expected point between the
+    -- ---- starting wealth and Year 1's P_track, and logging Q4 of a year
+    -- ---- flows through to that year's row on the Annual table. ----
+    tell application "Microsoft Excel"
+        set startingWealth to value of cell 1 of column 2 of wsRefill
+        set year1PTrack to value of cell annualDataStart of column 4 of wsRefill
+        set q1InterpCurrent to value of cell quarterlyDataStart of column 11 of wsRefill
+    end tell
+
+    set expectedQ1 to startingWealth + (year1PTrack - startingWealth) * 0.25
+    if not roughlyEqual(q1InterpCurrent, expectedQ1, 1) then
+        error "Quarterly interpolation: Q1's interpolated Current Predicted Wealth should be 25% of the way from starting wealth to Year 1's P_track -- expected " & expectedQ1 & ", got " & q1InterpCurrent
+    end if
+
+    set q4Row to quarterlyDataStart + 3
+    tell application "Microsoft Excel"
+        set annualBalanceBefore to value of cell annualDataStart of column 6 of wsRefill
+        set value of range (("J" & q4Row)) of wsRefill to 740000
+        calculate full
+        set annualBalanceAfter to value of cell annualDataStart of column 6 of wsRefill
+        set value of range (("J" & q4Row)) of wsRefill to ""
+        calculate full
+    end tell
+
+    if annualBalanceBefore is not missing value then
+        error "Quarterly Actual Balance: expected the Annual table's Actual Balance to start as a gap before Q4 is logged, got " & annualBalanceBefore
+    end if
+    if not roughlyEqual(annualBalanceAfter, 740000, 1) then
+        error "Quarterly Actual Balance: logging Q4 should flow through to the Annual table's year-end figure -- expected 740000, got " & annualBalanceAfter
+    end if
+
     tell application "Microsoft Excel"
         close workbook "$XLSX_NAME" saving no
     end tell
-    log "OK: $XLSX_NAME -- Roth isolation, G Fund floor, ramp linearity, Default/Override precedence, and the NA() gap all behave as designed"
+    log "OK: $XLSX_NAME -- Roth isolation, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, and quarterly Actual Balance logging all behave as designed"
 on error errMsg number errNum
     try
         tell application "Microsoft Excel"

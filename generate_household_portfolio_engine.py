@@ -260,9 +260,9 @@ for para in (
     "G Fund can only ever hold real dollars. The Emergency Liquidity Protocol tells you, in a full-blown "
     "crisis, exactly which account to draw from next.",
 
-    "Graph -- A single chart, read-only, pulling straight from The_Refill_Engine's Annual SRR Hurdle Model: "
-    "Original Predicted Wealth vs. Current Predicted Wealth vs. Actual Balance, by year. Kept on its own "
-    "tab so it never crowds the data-entry tabs -- open it only when you want the picture.",
+    "Graph -- A single chart, read-only, pulling straight from The_Refill_Engine's Quarterly Refill Engine "
+    "table: Original Predicted Wealth vs. Current Predicted Wealth vs. Actual Balance, by quarter. Kept on "
+    "its own tab so it never crowds the data-entry tabs -- open it only when you want the picture.",
 ):
     write_paragraph(ws0, r, para, chars_per_line=DOC_CHARS_PER_LINE)
     r += 1
@@ -282,8 +282,9 @@ checklist = [
     "recommendation exactly -- leaving it blank makes the sheet assume the recommendation happened.",
     "If you executed a Roth conversion this year, log its tax cost (IRA funds used minus the resulting "
     "Roth deposit) in Variables_And_Log -- this keeps it from skewing the GOOD/POOR trigger.",
-    "Once a year, log that year's real total household balance in Variables_And_Log's Actual Balance "
-    "column, so the Graph tab has something to plot against the projections.",
+    "Log this quarter's real total household balance in the \"Actual Balance (Logged, This Quarter)\" "
+    "column of the Quarterly Refill Engine table, so the Graph tab has something to plot against the "
+    "projections.",
     "The first time your real starting balances and assumptions are in Google Sheets, select The_Refill_"
     "Engine's Original Predicted Wealth column and Paste Special -> Values Only over itself, once, to "
     "freeze it as your baseline -- never touch it again after that.",
@@ -365,6 +366,10 @@ GLOSSARY = [
                                    "it by hand (Paste Special -> Values Only, once, after your real numbers "
                                    "are in). After that it stays fixed as your baseline while Current keeps "
                                    "moving with your latest assumptions. Feeds the Graph tab."),
+    ("Actual Balance", "Your real total household balance, logged each quarter directly on the Quarterly "
+                        "Refill Engine table. Compared on the Graph tab against Current and Original "
+                        "Predicted Wealth, which are only computed once a year and interpolated between "
+                        "quarters for that comparison -- not a new quarterly hurdle-rate model."),
     ("Conduit", "A Traditional IRA used as a pass-through for pre-tax rollovers back into the TSP."),
     ("Rollover", "A pre-tax transfer of funds between retirement accounts (e.g. Traditional IRA to TSP) "
                  "that doesn't trigger a taxable distribution."),
@@ -396,9 +401,9 @@ ws1 = wb.create_sheet("Variables_And_Log")
 
 BANNER_ROW_1 = 1
 ws1.cell(row=BANNER_ROW_1, column=1,
-          value="HOUSEHOLD VARIABLE LOG — ANNUAL HURDLE INPUTS, MONTHLY TSP → CHECKING PAYMENT LOG, "
-                "ROTH CONVERSION COST & ACTUAL BALANCE LOG (2026-2035)")
-LAST_COL_1 = 5 + 12 + 2  # 5 lead cols + 12 months + Roth conversion cost + actual balance
+          value="HOUSEHOLD VARIABLE LOG — ANNUAL HURDLE INPUTS, MONTHLY TSP → CHECKING PAYMENT LOG & "
+                "ROTH CONVERSION COST (2026-2035)")
+LAST_COL_1 = 5 + 12 + 1  # 5 lead cols + 12 months + Roth conversion cost
 ws1.merge_cells(start_row=BANNER_ROW_1, start_column=1, end_row=BANNER_ROW_1, end_column=LAST_COL_1)
 for col in range(1, LAST_COL_1 + 1):
     c = ws1.cell(row=BANNER_ROW_1, column=col)
@@ -416,7 +421,6 @@ ws1_headers = [
     "Total Annual Outflows (W_t)",
 ] + MONTH_NAMES + [
     "Roth Conversion Tax Cost (This Year)",
-    "Actual Balance (Logged, Your Check-In Date)",
 ]
 for idx, h in enumerate(ws1_headers, start=1):
     ws1.cell(row=HEADER_ROW_1, column=idx, value=h)
@@ -424,9 +428,7 @@ style_header_row(ws1, HEADER_ROW_1, 1, len(ws1_headers))
 ws1.row_dimensions[HEADER_ROW_1].height = 32
 
 ROTH_CONVERSION_COL = 6 + 12       # R -- IRA-funded Roth conversion tax cost, logged as it happens
-ACTUAL_BALANCE_COL = ROTH_CONVERSION_COL + 1  # S -- actual total household wealth, logged once/year
 ROTH_CONVERSION_COL_LETTER = get_column_letter(ROTH_CONVERSION_COL)
-ACTUAL_BALANCE_COL_LETTER = get_column_letter(ACTUAL_BALANCE_COL)
 
 DATA_START_ROW_1 = HEADER_ROW_1 + 1  # row 3
 for i, year in enumerate(YEARS):
@@ -443,7 +445,6 @@ for i, year in enumerate(YEARS):
     for m, col_letter in enumerate(MONTH_COLS):
         mark_input(style_body_cell(ws1, r, 6 + m, number_format=CURRENCY_FMT))
     mark_input(style_body_cell(ws1, r, ROTH_CONVERSION_COL, number_format=CURRENCY_FMT)).value = 0
-    mark_input(style_body_cell(ws1, r, ACTUAL_BALANCE_COL, number_format=CURRENCY_FMT))  # left blank until logged
 
 LAST_DATA_ROW_1 = DATA_START_ROW_1 + len(YEARS) - 1  # row 12 (2035)
 
@@ -456,8 +457,8 @@ ws1.cell(row=note_row_1, column=1,
                 "accounts and tracked separately from this plan -- log only the tax cost of each conversion "
                 "(IRA funds used minus the resulting Roth deposit) in the Roth Conversion Tax Cost column, so "
                 "The_Refill_Engine can add it back and avoid mistaking a planned tax cost for a market "
-                "downturn. Log Actual Balance once a year, as of whatever check-in date you choose, to drive "
-                "the Original vs. Current vs. Actual chart on The_Refill_Engine.")
+                "downturn. Actual Balance is logged quarterly instead, directly in the Quarterly Refill "
+                "Engine table on The_Refill_Engine, alongside everything else you already update there.")
 ws1.cell(row=note_row_1, column=1).font = italic_note_font
 
 legend_row_1 = note_row_1 + 1  # row 15
@@ -664,8 +665,8 @@ r += 2  # blank spacer row
 QUARTERLY_BANNER_ROW = r
 ws3.cell(row=QUARTERLY_BANNER_ROW, column=1,
           value="THE QUARTERLY REFILL ENGINE — PRIMARY OUTPUT: RECOMMENDED TSP TOP-UP TRANSFER")
-ws3.merge_cells(start_row=QUARTERLY_BANNER_ROW, start_column=1, end_row=QUARTERLY_BANNER_ROW, end_column=9)
-for col in range(1, 10):
+ws3.merge_cells(start_row=QUARTERLY_BANNER_ROW, start_column=1, end_row=QUARTERLY_BANNER_ROW, end_column=12)
+for col in range(1, 13):
     c = ws3.cell(row=QUARTERLY_BANNER_ROW, column=col)
     c.font = section_font
     c.fill = section_fill
@@ -683,6 +684,9 @@ quarterly_headers = [
     "Actual Transferred (Log It Here)",
     "G Fund Balance (End of Qtr, Projected)",
     "Target Safety Anchor Balance (This Year)",
+    "Actual Balance (Logged, This Quarter)",
+    "Current Predicted Wealth (Interpolated)",
+    "Original Predicted Wealth (Interpolated)",
 ]
 for idx, h in enumerate(quarterly_headers, start=1):
     ws3.cell(row=QUARTERLY_HEADER_ROW, column=idx, value=h)
@@ -732,6 +736,31 @@ for i, year in enumerate(YEARS):
 
         h_cell = style_body_cell(ws3, r, 8, number_format=CURRENCY_FMT, border=border)
         h_cell.value = f'=MAX(0,E{r}-C{r}+IF(G{r}="",F{r},G{r}))'
+
+        # Logged quarterly, right where you already look every quarter -- feeds the
+        # Graph tab's quarterly chart (which reads this column directly and applies
+        # its own NA()-if-blank gap logic, rather than storing NA() here, so this
+        # cell stays a plain, empty input until you type into it).
+        mark_input(style_body_cell(ws3, r, 10, number_format=CURRENCY_FMT, border=border))
+
+        # Current/Original Predicted Wealth are only computed once a year (columns D
+        # and E on the Annual SRR Hurdle Model below); linearly interpolate between
+        # this year's and the prior year's value for a smooth quarterly comparison on
+        # the Graph tab. This is a display-only interpolation, not a new hurdle-rate
+        # model -- Year 1's "prior" endpoint is the starting wealth snapshot.
+        if i == 0:
+            prev_current_ref = f"$B${ACTUAL_WEALTH_SNAPSHOT_ROW}"
+            prev_original_ref = f"$B${ACTUAL_WEALTH_SNAPSHOT_ROW}"
+        else:
+            prev_current_ref = f"D{annual_row - 1}"
+            prev_original_ref = f"E{annual_row - 1}"
+        frac = f"({q + 1}/4)"
+
+        k_cell = style_body_cell(ws3, r, 11, number_format=CURRENCY_FMT, border=border)
+        k_cell.value = f"=ROUND({prev_current_ref}+(D{annual_row}-{prev_current_ref})*{frac},2)"
+
+        l_cell = style_body_cell(ws3, r, 12, number_format=CURRENCY_FMT, border=border)
+        l_cell.value = f"=ROUND({prev_original_ref}+(E{annual_row}-{prev_original_ref})*{frac},2)"
 
         ws3.row_dimensions[r].height = 28
 
@@ -786,11 +815,12 @@ for i, year in enumerate(YEARS):
     # Only over itself, one time, so it stops moving and becomes your fixed baseline.
     style_body_cell(ws3, r, 5, number_format=CURRENCY_FMT).value = f"=D{r}"
 
-    # NA() rather than blank/0 so an unlogged year shows as a true gap on the
-    # Graph tab's chart instead of a phantom zero-height bar.
+    # Year-end snapshot, pulled from this year's Q4 row on the Quarterly Refill
+    # Engine table above (where Actual Balance is actually logged, each quarter).
+    # NA() rather than blank/0 so an unlogged year shows as a true gap.
+    q4_row = QUARTERLY_DATA_START + 4 * i + 3
     style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT).value = (
-        f"=IF('Variables_And_Log'!{ACTUAL_BALANCE_COL_LETTER}{var_log_row}=\"\",NA(),"
-        f"'Variables_And_Log'!{ACTUAL_BALANCE_COL_LETTER}{var_log_row})"
+        f'=IF(J{q4_row}="",NA(),J{q4_row})'
     )
 
     trigger_formula = (
@@ -975,7 +1005,6 @@ ws1.column_dimensions["A"].width = 14
 for col_letter in MONTH_COLS:
     ws1.column_dimensions[col_letter].width = 12
 ws1.column_dimensions[ROTH_CONVERSION_COL_LETTER].width = 18
-ws1.column_dimensions[ACTUAL_BALANCE_COL_LETTER].width = 20
 
 ws3.column_dimensions["A"].width = 42
 ws3.column_dimensions["B"].width = 14
@@ -986,6 +1015,9 @@ ws3.column_dimensions["F"].width = 22
 ws3.column_dimensions["G"].width = 22
 ws3.column_dimensions["H"].width = 22
 ws3.column_dimensions["I"].width = 22
+ws3.column_dimensions["J"].width = 22
+ws3.column_dimensions["K"].width = 24
+ws3.column_dimensions["L"].width = 24
 
 # --------------------------------------------------------------------------
 # TAB 4: Graph
@@ -1003,9 +1035,12 @@ ws4.row_dimensions[1].height = 24
 
 write_paragraph(
     ws4, 3,
-    "This chart reads directly from the Annual SRR Hurdle Model table on The_Refill_Engine -- there is "
-    "nothing to edit here. Original Predicted Wealth only means something once you've frozen it there (see "
-    "the note on that column); Actual Balance only shows for years you've logged on Variables_And_Log.",
+    "This chart reads directly from the Quarterly Refill Engine table on The_Refill_Engine -- there is "
+    "nothing to edit here. Actual Balance is whatever you've logged there each quarter. Current and "
+    "Original Predicted Wealth are only computed once a year on the Annual SRR Hurdle Model below that "
+    "table, so the quarterly points in between are a straight-line interpolation for a smoother comparison "
+    "-- not a new quarterly hurdle-rate model. Original only means something once you've frozen it there "
+    "(see the note on that column).",
     col=1, chars_per_line=100,
 )
 
@@ -1013,17 +1048,17 @@ chart = BarChart()
 chart.type = "col"
 chart.grouping = "clustered"
 chart.overlap = -10
-chart.title = "Household Wealth: Original vs. Current Projection vs. Actual"
+chart.title = "Household Wealth: Original vs. Current Projection vs. Actual, By Quarter"
 chart.y_axis.title = "Household Wealth ($)"
 chart.y_axis.numFmt = CURRENCY_FMT
-chart.x_axis.title = "Year"
+chart.x_axis.title = "Year / Quarter"
 chart.height = 12
-chart.width = 26
+chart.width = 32
 
-cats = Reference(ws3, min_col=1, min_row=ANNUAL_DATA_START, max_row=ANNUAL_DATA_END)
-data_original = Reference(ws3, min_col=5, min_row=ANNUAL_HEADER_ROW, max_row=ANNUAL_DATA_END)
-data_current = Reference(ws3, min_col=4, min_row=ANNUAL_HEADER_ROW, max_row=ANNUAL_DATA_END)
-data_actual = Reference(ws3, min_col=6, min_row=ANNUAL_HEADER_ROW, max_row=ANNUAL_DATA_END)
+cats = Reference(ws3, min_col=1, max_col=2, min_row=QUARTERLY_DATA_START, max_row=QUARTERLY_DATA_END)
+data_original = Reference(ws3, min_col=12, min_row=QUARTERLY_HEADER_ROW, max_row=QUARTERLY_DATA_END)
+data_current = Reference(ws3, min_col=11, min_row=QUARTERLY_HEADER_ROW, max_row=QUARTERLY_DATA_END)
+data_actual = Reference(ws3, min_col=10, min_row=QUARTERLY_HEADER_ROW, max_row=QUARTERLY_DATA_END)
 
 chart.add_data(data_original, titles_from_data=True)
 chart.add_data(data_current, titles_from_data=True)
