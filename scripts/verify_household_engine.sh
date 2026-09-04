@@ -2,12 +2,12 @@
 # Functional/behavioral regression checks for household_portfolio_engine.xlsx --
 # not unit tests of the Python generator, but assertions on the RECALCULATED
 # workbook's actual numbers. The bugs this project has actually hit (the G
-# Fund floor going negative, the Roth conversion tax-cost addback leaking
-# into dollar-sizing formulas it shouldn't touch) live in how formulas
-# interact with each other, not in any single Python function -- so that's
-# what these check, by mutating a few cells, recalculating for real, and
-# asserting on the result. Complements (does not replace) verify_workbook.sh's
-# generic formula-error scan.
+# Fund floor going negative, a Roth-conversion accounting change leaking into
+# formulas it shouldn't touch) live in how formulas interact with each other,
+# not in any single Python function -- so that's what these check, by
+# mutating a few cells, recalculating for real, and asserting on the result.
+# Complements (does not replace) verify_workbook.sh's generic formula-error
+# scan.
 #
 # Every check reverts its test input(s) before moving to the next check. The
 # whole check sequence runs inside a try block so the workbook is always
@@ -60,33 +60,50 @@ tell application "Microsoft Excel"
     calculate full
     set wsRefill to worksheet "The_Refill_Engine" of active workbook
     set wsLog to worksheet "Variables_And_Log" of active workbook
+    set wsTracker to worksheet "Account_Tracker" of active workbook
 end tell
 
 try
-    -- ---- Check 1: Roth conversion tax cost is isolated to the trigger
-    -- ---- basis, never leaks into a real dollar target. ----
-    set adjustedRow to findRow(wsRefill, "Adjusted Actual Wealth", 20)
-    set safetyRow to findRow(wsRefill, "Target Safety Anchor Balance (Today)", 20)
+    -- Shared row lookups, used by several checks below.
+    set quarterlyBannerRow to findRow(wsRefill, "PRIMARY OUTPUT", 200)
+    set quarterlyDataStart to quarterlyBannerRow + 2
+    set quarterlyDataEnd to quarterlyDataStart + 39 -- 10 years x 4 quarters
+    set annualBannerRow to findRow(wsRefill, "STRATEGIC PACING CHECK", 200)
+    set annualDataStart to annualBannerRow + 2
 
+    -- ---- Check 1: a logged Roth conversion + tax cost is a real, permanent
+    -- ---- reduction to Current Predicted Wealth (P_track) for that year --
+    -- ---- and that SAME reduction flows through to both the Target Safety
+    -- ---- Anchor Balance (This Year) and (structurally) the GOOD/POOR
+    -- ---- trigger, since both now read off the one unadjusted P_track
+    -- ---- trajectory. There is deliberately no isolated "trigger-only"
+    -- ---- track anymore -- Roth funds are entirely out of this tool's
+    -- ---- scope, so the logged cost is real money leaving the plan, not a
+    -- ---- market event to net back out. ----
     tell application "Microsoft Excel"
-        set adjustedBefore to value of cell adjustedRow of column 2 of wsRefill
-        set safetyBefore to value of cell safetyRow of column 2 of wsRefill
+        set pTrackBefore to value of cell annualDataStart of column 4 of wsRefill
+        set safetyAnchorThisYearBefore to value of cell quarterlyDataStart of column 9 of wsRefill
 
         set value of range "R3" of wsLog to 50000
         calculate full
 
-        set adjustedAfter to value of cell adjustedRow of column 2 of wsRefill
-        set safetyAfter to value of cell safetyRow of column 2 of wsRefill
+        set rothColAfter to value of cell annualDataStart of column 9 of wsRefill
+        set pTrackAfter to value of cell annualDataStart of column 4 of wsRefill
+        set safetyAnchorThisYearAfter to value of cell quarterlyDataStart of column 9 of wsRefill
+        set safetyPct to value of cell annualDataStart of column 8 of wsRefill
 
         set value of range "R3" of wsLog to 0
         calculate full
     end tell
 
-    if not roughlyEqual(adjustedAfter, adjustedBefore + 50000, 1) then
-        error "Roth isolation: Adjusted Actual Wealth should rise by exactly the logged tax cost -- expected " & (adjustedBefore + 50000) & ", got " & adjustedAfter
+    if not roughlyEqual(rothColAfter, 50000, 1) then
+        error "Roth cost pull-through: Annual table's Roth Conversion + Tax Cost column should read the logged 50000, got " & rothColAfter
     end if
-    if not roughlyEqual(safetyAfter, safetyBefore, 1) then
-        error "Roth isolation: Target Safety Anchor Balance should NOT move when a tax cost is logged (it must size off real wealth only) -- was " & safetyBefore & ", became " & safetyAfter
+    if not roughlyEqual(pTrackAfter, pTrackBefore - 50000, 1) then
+        error "Roth unification: Current Predicted Wealth (P_track) should drop by exactly the logged Roth conversion+tax cost -- expected " & (pTrackBefore - 50000) & ", got " & pTrackAfter
+    end if
+    if not roughlyEqual(safetyAnchorThisYearAfter, safetyAnchorThisYearBefore - (50000 * safetyPct), 1) then
+        error "Roth unification: Target Safety Anchor Balance (This Year) should fall by exactly the logged cost times that year's Safety Anchor % (proving it shares the same reduced basis as the trigger) -- expected drop of " & (50000 * safetyPct) & ", observed " & (safetyAnchorThisYearBefore - safetyAnchorThisYearAfter)
     end if
 
     -- ---- Check 2: the G Fund balance floors at zero under a sustained draw;
@@ -94,10 +111,6 @@ try
     -- ---- the draw is large enough to also flip a given year's GOOD/POOR
     -- ---- trigger (the floor must hold either way -- this doesn't rely on
     -- ---- staying POOR, just on a real, nontrivial draw over the horizon). ----
-    set quarterlyBannerRow to findRow(wsRefill, "PRIMARY OUTPUT", 200)
-    set quarterlyDataStart to quarterlyBannerRow + 2
-    set quarterlyDataEnd to quarterlyDataStart + 39 -- 10 years x 4 quarters
-
     tell application "Microsoft Excel"
         repeat with rowIdx from 3 to 12 -- Variables_And_Log data rows (2026-2035)
             repeat with col in {"F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"}
@@ -126,9 +139,6 @@ try
 
     -- ---- Check 3: the Safety Anchor % ramp is linear between Starting and
     -- ---- Ending, using the default 30% -> 20% over 10 years. ----
-    set annualBannerRow to findRow(wsRefill, "STRATEGIC PACING CHECK", 200)
-    set annualDataStart to annualBannerRow + 2
-
     tell application "Microsoft Excel"
         set year1Pct to value of cell annualDataStart of column 8 of wsRefill
         set year4Pct to value of cell (annualDataStart + 3) of column 8 of wsRefill
@@ -211,10 +221,81 @@ try
         error "Quarterly Actual Balance: logging Q4 should flow through to the Annual table's year-end figure -- expected 740000, got " & annualBalanceAfter
     end if
 
+    -- ---- Check 7: the Recommended Transfer is bidirectional and respects
+    -- ---- the Minimum Transfer Threshold in either direction. A gap smaller
+    -- ---- than the threshold (as a % of that year's P_track) recommends $0;
+    -- ---- a gap well beyond it, with the G Fund OVER-funded relative to
+    -- ---- target, recommends pulling money back OUT of the G Fund (a
+    -- ---- negative transfer) -- and does so regardless of that year's
+    -- ---- GOOD/POOR trigger, since an over-funded reserve is a rebalance,
+    -- ---- not a performance call. ----
+    set minTransferRow to findRow(wsRefill, "Minimum Transfer Threshold", 30)
+
+    tell application "Microsoft Excel"
+        set gFundOriginal to value of cell 2 of column 3 of wsTracker
+        set conduitOriginal to value of cell 3 of column 3 of wsTracker
+        set targetThisYear to value of cell quarterlyDataStart of column 9 of wsRefill
+        set thresholdPct to value of cell minTransferRow of column 4 of wsRefill
+        set pTrackYear1 to value of cell annualDataStart of column 4 of wsRefill
+    end tell
+
+    set thresholdDollar to thresholdPct * pTrackYear1
+
+    -- Both sub-checks below shift dollars from the Conversion Conduit into the
+    -- G Fund (and back), rather than just inflating the G Fund balance alone --
+    -- the G Fund is one of the accounts summed into Total Household Net Worth,
+    -- so moving money INTO it without an offsetting move would also inflate
+    -- P_track and the target itself, defeating the point of the test. Shifting
+    -- between two tracked accounts keeps total wealth (and the target) fixed
+    -- while making the G Fund's own balance the only thing that moves.
+
+    -- 7a: G Fund balance sits ABOVE target, but by less than the threshold --
+    -- should still recommend $0 (the gap is too small to bother with).
+    set desiredGFundSmall to targetThisYear + (thresholdDollar * 0.5)
+    set deltaSmall to desiredGFundSmall - gFundOriginal
+    tell application "Microsoft Excel"
+        set value of range "C2" of wsTracker to gFundOriginal + deltaSmall
+        set value of range "C3" of wsTracker to conduitOriginal - deltaSmall
+        calculate full
+        set recommendedSmallGap to value of cell quarterlyDataStart of column 6 of wsRefill
+        set value of range "C2" of wsTracker to gFundOriginal
+        set value of range "C3" of wsTracker to conduitOriginal
+        calculate full
+    end tell
+
+    if not roughlyEqual(recommendedSmallGap, 0, 0.01) then
+        error "Minimum Transfer Threshold: a gap smaller than the threshold should recommend \$0, got " & recommendedSmallGap
+    end if
+
+    -- 7b: G Fund balance sits well ABOVE target -- should recommend pulling
+    -- the exact excess back out (a negative transfer), and the projected
+    -- End of Qtr balance should reflect that pull, not just the raw balance.
+    set desiredGFundLarge to targetThisYear + (thresholdDollar * 3)
+    set deltaLarge to desiredGFundLarge - gFundOriginal
+    tell application "Microsoft Excel"
+        set value of range "C2" of wsTracker to gFundOriginal + deltaLarge
+        set value of range "C3" of wsTracker to conduitOriginal - deltaLarge
+        calculate full
+        set recommendedPullOut to value of cell quarterlyDataStart of column 6 of wsRefill
+        set endOfQtrProjected to value of cell quarterlyDataStart of column 8 of wsRefill
+        set quarterlyOutflow to value of cell quarterlyDataStart of column 3 of wsRefill
+
+        set value of range "C2" of wsTracker to gFundOriginal
+        set value of range "C3" of wsTracker to conduitOriginal
+        calculate full
+    end tell
+
+    if not roughlyEqual(recommendedPullOut, -(thresholdDollar * 3), 1) then
+        error "Bidirectional transfer: an over-funded G Fund should recommend pulling the exact excess back out -- expected " & -(thresholdDollar * 3) & ", got " & recommendedPullOut
+    end if
+    if not roughlyEqual(endOfQtrProjected, targetThisYear - quarterlyOutflow, 1) then
+        error "Bidirectional transfer: G Fund Balance (End of Qtr, Projected) should reflect the negative transfer pulling the balance back down to (roughly) target -- expected " & (targetThisYear - quarterlyOutflow) & ", got " & endOfQtrProjected
+    end if
+
     tell application "Microsoft Excel"
         close workbook "$XLSX_NAME" saving no
     end tell
-    log "OK: $XLSX_NAME -- Roth isolation, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, and quarterly Actual Balance logging all behave as designed"
+    log "OK: $XLSX_NAME -- Roth conversion unification, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, quarterly Actual Balance logging, and bidirectional transfer + deadband all behave as designed"
 on error errMsg number errNum
     try
         tell application "Microsoft Excel"

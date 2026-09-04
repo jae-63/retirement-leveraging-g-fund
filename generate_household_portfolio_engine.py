@@ -65,6 +65,7 @@ DARK_RED_FONT = "C00000"
 FONT_NAME = "Segoe UI"
 
 CURRENCY_FMT = '$#,##0'
+CURRENCY_FMT_SIGNED = '$#,##0;($#,##0)'
 PERCENT_FMT = '0.00%'
 
 thin_border = Border(
@@ -241,24 +242,31 @@ for para in (
     "glossary. Nothing here feeds any formula; it's for the humans using the sheet.",
 
     "Variables_And_Log -- Where you log the things that change constantly: the actual Social "
-    "Security/Federal COLA each year, every month's actual TSP -> checking payment, the tax cost of any "
-    "Roth conversion (funded separately, from non-TSP accounts), and once a year, your actual total "
-    "household balance. Everything else on this tab is a formula built from those inputs.",
+    "Security/Federal COLA each year, every month's actual TSP -> checking payment, the total cost of any "
+    "Roth conversion (funded separately, from non-TSP accounts -- converted principal plus whatever share "
+    "of the taxes came out of IRA/retirement funds rather than out-of-pocket, combined into one number), "
+    "and once a year, your actual total household balance. Everything "
+    "else on this tab is a formula built from those inputs.",
 
     "Account_Tracker -- A snapshot of every account's live balance, updated by hand whenever you check "
     "statements (aim for at least quarterly). This is the single source of truth for household net worth "
     "that every other tab's formulas reference.",
 
     "The_Refill_Engine -- The decision-making tab. A block of configured inputs (Retirement Start Year, "
-    "Ramp Length, the G Fund target percentages, etc.) each carry a Default, an optional Override, and the "
-    "resulting Effective value everything else on the tab actually uses. The Quarterly Refill Engine table "
-    "is the headline output -- each quarter it tells you how much (if anything) to move from a private "
-    "pre-tax account into the TSP G Fund. Below that, the Annual SRR Hurdle Model is the strategic gauge: "
-    "GOOD vs. POOR for the year is decided using wealth adjusted to add back any logged Roth conversion "
-    "cost, so a planned tax bill is never mistaken for a market downturn -- but every real dollar amount "
-    "(the Safety Anchor balance, recommended transfers) is sized off real, unadjusted wealth, since the "
-    "G Fund can only ever hold real dollars. The Emergency Liquidity Protocol tells you, in a full-blown "
-    "crisis, exactly which account to draw from next.",
+    "Ramp Length, the G Fund target percentages, the minimum transfer threshold, etc.) each carry a "
+    "Default, an optional Override, and the resulting Effective value everything else on the tab actually "
+    "uses. The Quarterly Refill Engine table is the headline output -- each quarter it tells you how much "
+    "(if anything) to move between a private pre-tax account and the TSP G Fund, in either direction. "
+    "Below that, the Annual SRR Hurdle Model is the strategic gauge: since Roth funds are entirely out of "
+    "this tool's scope, a Roth conversion's real cost to the plan -- the converted principal, plus "
+    "whatever share of the taxes came out of IRA/retirement funds rather than out-of-pocket -- "
+    "is treated as one real, permanent reduction to the plan's tracked wealth. The same reduction feeds "
+    "both the GOOD/POOR trigger and every real dollar amount (the Safety Anchor balance, recommended "
+    "transfers), so there's no separate 'adjusted' track to keep in sync. Because that reduction typically "
+    "comes out of non-TSP accounts, it can lower the G Fund's dollar target below its actual balance -- in "
+    "that case the engine recommends pulling money back out of the G Fund, the mirror image of its usual "
+    "top-up job. The Emergency Liquidity Protocol tells you, in a full-blown crisis, exactly which account "
+    "to draw from next.",
 
     "Graph -- A single chart, read-only, pulling straight from The_Refill_Engine's Quarterly Refill Engine "
     "table: Original Predicted Wealth vs. Current Predicted Wealth vs. Actual Balance, by quarter. Kept on "
@@ -274,14 +282,22 @@ checklist = [
     "Update Account_Tracker with current balances from your statements.",
     "Confirm Variables_And_Log has this quarter's three monthly TSP payments logged.",
     "Open The_Refill_Engine and find this quarter's row in the Quarterly Refill Engine table.",
-    "Check the \"Recommended Transfer This Quarter\" cell. If it's $0, do nothing -- the shield is intact "
-    "or the market hasn't cleared its hurdle yet.",
+    "Check the \"Recommended Transfer This Quarter\" cell. If it's $0, do nothing -- the gap between "
+    "target and actual is too small to bother with, or the market hasn't cleared its hurdle yet.",
     "If it's a positive number, execute a pre-tax rollover of that amount from your Conversion Conduit "
-    "(Traditional IRA) into the TSP G Fund.",
+    "(Traditional IRA) into the TSP G Fund. If it's negative, transfer that amount the other way -- from "
+    "the TSP G Fund back to your Conversion Conduit -- since the target has dropped below what's already "
+    "sitting in the G Fund.",
     "Log whatever you actually transferred in the \"Actual Transferred\" column, even if it matches the "
-    "recommendation exactly -- leaving it blank makes the sheet assume the recommendation happened.",
-    "If you executed a Roth conversion this year, log its tax cost (IRA funds used minus the resulting "
-    "Roth deposit) in Variables_And_Log -- this keeps it from skewing the GOOD/POOR trigger.",
+    "recommendation exactly -- leaving it blank makes the sheet assume the recommendation happened. Use "
+    "the same sign the recommendation used: positive for money moved into the G Fund, negative for money "
+    "moved out.",
+    "If you executed a Roth conversion this year, log its cost to the plan -- the converted principal, "
+    "plus any taxes you paid from IRA/retirement funds -- as one combined number in Variables_And_Log. "
+    "Skip any portion of the taxes you paid out-of-pocket; that cash was never part of this tool's tracked "
+    "wealth, so it's not a reduction to it. Roth funds themselves are out of this tool's scope entirely, "
+    "so what you do log is a real, permanent reduction to the plan's tracked wealth, not a market downturn "
+    "to explain away.",
     "Log this quarter's real total household balance in the \"Actual Balance (Logged, This Quarter)\" "
     "column of the Quarterly Refill Engine table, so the Graph tab has something to plot against the "
     "projections.",
@@ -334,7 +350,8 @@ GLOSSARY = [
                      "considered \"on track\" -- COLA layered on a fixed real-growth baseline."),
     ("W_t / W_q", "Total dollar outflows (withdrawals) for a given year (t) or quarter (q)."),
     ("P_track", "The simulated target portfolio value that the household's actual wealth is measured "
-                "against each year."),
+                "against each year. Reduced by that year's logged Roth Conversion + Tax Cost, since that "
+                "money is a real, permanent exit from the plan's tracked wealth, not a market event."),
     ("SRR", "Sequence-of-Returns Risk -- the risk that a downturn early in retirement forces permanent "
             "sale of depreciated assets."),
     ("TSP G Fund", "The federal Thrift Savings Plan's government-securities fund: principal-protected, "
@@ -351,16 +368,20 @@ GLOSSARY = [
                                         "The_Refill_Engine. Default is the built-in value; Override is blank "
                                         "unless you want to change it; Effective is whichever one is actually "
                                         "in force, and is what every other formula on the tab references."),
-    ("Adjusted Actual Wealth", "Account_Tracker's live total plus the cumulative Roth conversion tax cost "
-                                "logged to date. Used ONLY for the GOOD/POOR trigger comparison (against "
-                                "Market Performance Basis, below), so a planned conversion's tax bill isn't "
-                                "mistaken for a market downturn. Never used to size a real dollar amount -- "
-                                "see Market Performance Basis."),
-    ("Market Performance Basis", "A column on the Annual SRR Hurdle Model, seeded from Adjusted Actual "
-                                  "Wealth instead of the real balance -- the same hurdle-rate trajectory as "
-                                  "Current Predicted Wealth (P_track), just tax-adjusted. Exists only to give "
-                                  "the GOOD/POOR trigger a fair comparison; nothing that sizes a real dollar "
-                                  "amount (Safety Anchor balance, recommended transfers) ever references it."),
+    ("Roth Conversion + Tax Cost", "The one number you log per year for a Roth conversion: the converted "
+                                    "principal, plus any taxes paid from IRA/retirement funds -- never taxes "
+                                    "paid out-of-pocket, since that cash was never part of this tool's "
+                                    "tracked wealth. Since Roth funds are entirely out of this tool's scope, "
+                                    "this whole amount is treated as a "
+                                    "real, permanent reduction to Current Predicted Wealth (P_track) -- the "
+                                    "same reduction feeds the GOOD/POOR trigger and every real dollar amount "
+                                    "the plan sizes, so there's no separate adjusted track to reconcile."),
+    ("Minimum Transfer Threshold", "A configured input (Default/Override/Effective, on The_Refill_Engine) "
+                                    "setting how large the gap between the Target Safety Anchor Balance and "
+                                    "the G Fund's actual balance must be, as a percent of that year's P_track, "
+                                    "before the engine bothers recommending a transfer. Applies in either "
+                                    "direction, so a gap too small to matter produces a $0 recommendation "
+                                    "instead of a token transfer."),
     ("Original Predicted Wealth", "A column on the Annual SRR Hurdle Model that mirrors Current Predicted "
                                    "Wealth (P_track) -- the real, unadjusted trajectory -- until you freeze "
                                    "it by hand (Paste Special -> Values Only, once, after your real numbers "
@@ -420,14 +441,14 @@ ws1_headers = [
     "Total Annual Hurdle Rate",
     "Total Annual Outflows (W_t)",
 ] + MONTH_NAMES + [
-    "Roth Conversion Tax Cost (This Year)",
+    "Roth Conversion + Tax Cost (This Year)",
 ]
 for idx, h in enumerate(ws1_headers, start=1):
     ws1.cell(row=HEADER_ROW_1, column=idx, value=h)
 style_header_row(ws1, HEADER_ROW_1, 1, len(ws1_headers))
 ws1.row_dimensions[HEADER_ROW_1].height = 32
 
-ROTH_CONVERSION_COL = 6 + 12       # R -- IRA-funded Roth conversion tax cost, logged as it happens
+ROTH_CONVERSION_COL = 6 + 12       # R -- IRA-funded Roth conversion + tax total cost, logged as it happens
 ROTH_CONVERSION_COL_LETTER = get_column_letter(ROTH_CONVERSION_COL)
 
 DATA_START_ROW_1 = HEADER_ROW_1 + 1  # row 3
@@ -454,11 +475,13 @@ ws1.cell(row=note_row_1, column=1,
                 "Log each month's actual TSP -> checking payment in columns F:Q as it is set or changes -- "
                 "Total Annual Outflows (E) sums automatically. If a payment amount changes mid-year, just "
                 "overwrite that month's cell going forward. Roth conversions are funded entirely from non-TSP "
-                "accounts and tracked separately from this plan -- log only the tax cost of each conversion "
-                "(IRA funds used minus the resulting Roth deposit) in the Roth Conversion Tax Cost column, so "
-                "The_Refill_Engine can add it back and avoid mistaking a planned tax cost for a market "
-                "downturn. Actual Balance is logged quarterly instead, directly in the Quarterly Refill "
-                "Engine table on The_Refill_Engine, alongside everything else you already update there.")
+                "accounts -- log the total cost of each conversion (the converted principal, plus any taxes "
+                "paid from IRA/retirement funds -- skip taxes paid out-of-pocket, that cash was never part "
+                "of this tool's tracked wealth) in the Roth Conversion + Tax Cost column. Roth funds "
+                "are entirely out of this tool's scope, so The_Refill_Engine treats that whole amount as a "
+                "real, permanent reduction to the plan's tracked wealth. Actual Balance is logged quarterly "
+                "instead, directly in the Quarterly Refill Engine table on The_Refill_Engine, alongside "
+                "everything else you already update there.")
 ws1.cell(row=note_row_1, column=1).font = italic_note_font
 
 legend_row_1 = note_row_1 + 1  # row 15
@@ -593,25 +616,23 @@ r = 1
 write_kv_row(r, "Total Current Actual Wealth (Live Account_Tracker Snapshot)",
              f"={TOTAL_NET_WORTH_REF}", CURRENCY_FMT, is_summary=True)
 ACTUAL_WEALTH_SNAPSHOT_ROW = r
+ACTUAL_WEALTH_CELL = f"$B${ACTUAL_WEALTH_SNAPSHOT_ROW}"
 r += 1
-write_kv_row(r, "Cumulative Roth Conversion Tax Cost (Logged To Date)",
+write_kv_row(r, "Cumulative Roth Conversion + Tax Cost (Logged To Date, Informational)",
              f"=SUM('Variables_And_Log'!{ROTH_CONVERSION_COL_LETTER}{DATA_START_ROW_1}:"
              f"{ROTH_CONVERSION_COL_LETTER}{LAST_DATA_ROW_1})", CURRENCY_FMT, is_summary=True)
-ROTH_ADDBACK_ROW = r
 r += 1
-write_kv_row(r, "Adjusted Actual Wealth (Used for GOOD/POOR Trigger & Safety Anchor)",
-             f"=B{ACTUAL_WEALTH_SNAPSHOT_ROW}+B{ROTH_ADDBACK_ROW}", CURRENCY_FMT, is_summary=True)
-ADJUSTED_WEALTH_ROW = r
-ADJUSTED_WEALTH_CELL = f"$B${ADJUSTED_WEALTH_ROW}"
-r += 1
+ROTH_NOTE_ROW = r
 ws3.cell(row=r, column=1,
-          value="Roth conversions are funded from non-TSP accounts and planned separately from this "
-                "strategy. The converted principal is a net-zero move between accounts Account_Tracker "
-                "already reflects; only the tax cost is a real, permanent reduction in household wealth, "
-                "not a market downturn. That cost is used two different ways below, deliberately: the "
-                "GOOD/POOR trigger adds it back (so a planned tax bill can't be mistaken for a bad market), "
-                "but the Safety Anchor's dollar sizing does NOT add it back -- the G Fund can only ever hold "
-                "real dollars, so its target is sized off real wealth, never off a phantom tax refund.")
+          value="Roth conversions are funded from non-TSP accounts. Since Roth funds are entirely out of "
+                "this tool's scope, the converted principal is NOT a net-zero move as far as this plan is "
+                "concerned -- it, plus any taxes paid from IRA/retirement funds (never taxes paid "
+                "out-of-pocket, since that cash was never part of this tool's tracked wealth), are a real, "
+                "permanent reduction to the plan's tracked wealth. Log the combined total per year on "
+                "Variables_And_Log; the Annual SRR Hurdle Model below subtracts it from Current Predicted "
+                "Wealth (P_track) the same way it subtracts Annual Outflows, and that same reduced P_track "
+                "feeds both the GOOD/POOR trigger and every real dollar amount (Safety Anchor balance, "
+                "recommended transfers) -- deliberately no longer two separate tracks.")
 ws3.cell(row=r, column=1).font = italic_note_font
 r += 2  # blank spacer row
 
@@ -635,6 +656,9 @@ STARTING_TARGET_CELL = write_config_row(
 r += 1
 ENDING_TARGET_CELL = write_config_row(r, "Ending G Fund Target % (steady state)", 0.20, PERCENT_FMT)
 r += 1
+MIN_TRANSFER_PCT_CELL = write_config_row(
+    r, "Minimum Transfer Threshold (% of That Year's P_track)", 0.001, PERCENT_FMT)
+r += 1
 r += 1  # blank spacer row
 
 write_kv_row(r, "Current G Fund Target % (Today)",
@@ -656,7 +680,9 @@ ws3.cell(row=r, column=1,
                 "Model below and drives the Quarterly Refill Engine's 'Target Safety Anchor Balance (This "
                 "Year)' column, scaled against that year's Current Predicted Wealth (P_track), not a value "
                 "frozen at Year 1. The row above is only a live snapshot of today's applicable target for "
-                "quick reference.")
+                "quick reference. The Minimum Transfer Threshold keeps the recommended-transfer cell from "
+                "firing on a trivially small gap between that target and the G Fund's actual balance -- in "
+                "either direction.")
 ws3.cell(row=r, column=1).font = italic_note_font
 CONFIG_NOTE_ROW = r
 r += 2  # blank spacer row
@@ -680,8 +706,8 @@ quarterly_headers = [
     "Quarterly Outflow (W_q)",
     "Annual Performance Signal",
     "G Fund Balance (Start of Qtr)",
-    "Recommended Transfer This Quarter",
-    "Actual Transferred (Log It Here)",
+    "Recommended Transfer This Quarter (+ Into TSP / − Out Of TSP)",
+    "Actual Transferred (Log It Here, Same Sign)",
     "G Fund Balance (End of Qtr, Projected)",
     "Target Safety Anchor Balance (This Year)",
     "Actual Balance (Logged, This Quarter)",
@@ -728,11 +754,21 @@ for i, year in enumerate(YEARS):
         i_cell = style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT, border=border)
         i_cell.value = f"=H{annual_row}*D{annual_row}"
 
-        f_cell = style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT, bold=True,
+        # Bidirectional: pushes into the G Fund only in a GOOD year (unchanged from before), but
+        # pulls money back out whenever the target has dropped below the actual balance by more
+        # than the threshold -- e.g. after a Roth conversion+tax cost shrinks P_track -- regardless
+        # of that year's GOOD/POOR signal, since that's a rebalance-to-target, not a performance call.
+        # Either direction is suppressed if the gap is smaller than the Minimum Transfer Threshold
+        # (a percent of that year's P_track), so a trivial gap doesn't trigger a token transfer.
+        threshold_expr = f"({MIN_TRANSFER_PCT_CELL}*D{annual_row})"
+        f_cell = style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT_SIGNED, bold=True,
                                    fill=accent_fill, border=border)
-        f_cell.value = f'=IF(ISNUMBER(SEARCH("GOOD",D{r})),MAX(0,I{r}-E{r}),0)'
+        f_cell.value = (
+            f'=IF(I{r}-E{r}<-{threshold_expr},I{r}-E{r},'
+            f'IF(AND(ISNUMBER(SEARCH("GOOD",D{r})),I{r}-E{r}>{threshold_expr}),I{r}-E{r},0))'
+        )
 
-        g_cell = mark_input(style_body_cell(ws3, r, 7, number_format=CURRENCY_FMT, border=border))
+        g_cell = mark_input(style_body_cell(ws3, r, 7, number_format=CURRENCY_FMT_SIGNED, border=border))
 
         h_cell = style_body_cell(ws3, r, 8, number_format=CURRENCY_FMT, border=border)
         h_cell.value = f'=MAX(0,E{r}-C{r}+IF(G{r}="",F{r},G{r}))'
@@ -779,12 +815,12 @@ annual_headers = [
     "Year",
     "Total Annual Hurdle Rate",
     "Annual Outflows (W_t)",
-    "Current Predicted Wealth (P_track) — Real, Unadjusted",
+    "Current Predicted Wealth (P_track)",
     "Original Predicted Wealth (Freeze By Hand Once)",
     "Actual Balance (Logged)",
     "Performance Logic Trigger",
     "Safety Anchor % (This Year)",
-    "Market Performance Basis (P_track, Adjusted for Roth Tax Cost) — Trigger Only",
+    "Roth Conversion + Tax Cost (This Year)",
 ]
 for idx, h in enumerate(annual_headers, start=1):
     ws3.cell(row=ANNUAL_HEADER_ROW, column=idx, value=h)
@@ -799,15 +835,16 @@ for i, year in enumerate(YEARS):
     style_body_cell(ws3, r, 2, number_format=PERCENT_FMT).value = f"='Variables_And_Log'!D{var_log_row}"
     style_body_cell(ws3, r, 3, number_format=CURRENCY_FMT).value = f"='Variables_And_Log'!E{var_log_row}"
 
-    # Real, unadjusted trajectory -- seeded from the raw Account_Tracker snapshot, never
-    # the Roth-tax-adjusted figure. This is what the Original-freeze column, the Graph
-    # tab, and the Safety Anchor's dollar sizing all use: the G Fund can only ever hold
-    # real dollars, so nothing that touches an actual dollar target should be inflated
-    # by a phantom tax refund that doesn't exist to hold.
+    # Seeded from the raw Account_Tracker snapshot, then rolled forward each year net of
+    # Annual Outflows AND that year's logged Roth Conversion + Tax Cost (column I) -- since
+    # Roth funds are entirely out of this tool's scope, that cost is a real, permanent exit
+    # from the plan, not a market event, so it belongs in the same trajectory everything
+    # else (the GOOD/POOR trigger, the Safety Anchor's dollar sizing) reads from. There is
+    # deliberately no separate adjusted track anymore.
     if i == 0:
-        target_formula = f"=ROUND((B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{r})-C{r},2)"
+        target_formula = f"=ROUND((B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{r})-C{r}-I{r},2)"
     else:
-        target_formula = f"=ROUND((D{r - 1}*B{r})-C{r},2)"
+        target_formula = f"=ROUND((D{r - 1}*B{r})-C{r}-I{r},2)"
     style_body_cell(ws3, r, 4, number_format=CURRENCY_FMT).value = target_formula
 
     # Mirrors Current (D) until you freeze it: once your real starting balances and
@@ -824,7 +861,7 @@ for i, year in enumerate(YEARS):
     )
 
     trigger_formula = (
-        f'=IF({ADJUSTED_WEALTH_CELL}>=I{r},'
+        f'=IF({ACTUAL_WEALTH_CELL}>=D{r},'
         f'"✅ GOOD: Execute T2065 Rebalance & Rollover to TSP",'
         f'"⚠️ POOR: Freeze Equities. Draw Down G Fund")'
     )
@@ -840,16 +877,13 @@ for i, year in enumerate(YEARS):
         f"(A{r}-{RETIREMENT_START_CELL})/{RAMP_LENGTH_CELL})"
     )
 
-    # Trigger-only basis: the SAME recursive hurdle-rate trajectory as D, but seeded from
-    # Adjusted Actual Wealth (raw + cumulative logged Roth tax cost) instead of raw wealth,
-    # so a planned tax bill can't masquerade as a market downturn in the GOOD/POOR call.
-    # Deliberately isolated to this one column -- nothing that sizes a real dollar amount
-    # (Safety Anchor balance, quarterly transfer recommendations) should ever reference it.
-    if i == 0:
-        adj_target_formula = f"=ROUND(({ADJUSTED_WEALTH_CELL}*B{r})-C{r},2)"
-    else:
-        adj_target_formula = f"=ROUND((I{r - 1}*B{r})-C{r},2)"
-    style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT).value = adj_target_formula
+    # Pulled straight from this year's logged total on Variables_And_Log -- the converted
+    # principal plus any taxes paid from IRA/retirement funds (never out-of-pocket taxes,
+    # since that cash was never part of this tool's tracked wealth). Feeds column D's
+    # recursive formula above as another category of outflow, same as Annual Outflows.
+    style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT).value = (
+        f"='Variables_And_Log'!{ROTH_CONVERSION_COL_LETTER}{var_log_row}"
+    )
 
     ws3.row_dimensions[r].height = 28
 
@@ -997,7 +1031,7 @@ ws3.freeze_panes = f"A{QUARTERLY_DATA_START}"
 # --------------------------------------------------------------------------
 autofit_columns(ws1, skip_rows={note_row_1, legend_row_1})
 autofit_columns(ws2, skip_rows={note_row_2, legend_row_2})
-autofit_columns(ws3, skip_rows={ADJUSTED_WEALTH_ROW + 1, CONFIG_NOTE_ROW, note_row_3, legend_row_3})
+autofit_columns(ws3, skip_rows={ROTH_NOTE_ROW, CONFIG_NOTE_ROW, note_row_3, legend_row_3})
 for ws in (ws1, ws2, ws3):
     ws.sheet_view.showGridLines = True
 
