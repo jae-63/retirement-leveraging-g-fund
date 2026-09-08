@@ -106,7 +106,39 @@ try
         error "Roth unification: Target Safety Anchor Balance (This Year) should fall by exactly the logged cost times that year's Safety Anchor % (proving it shares the same reduced basis as the trigger) -- expected drop of " & (50000 * safetyPct) & ", observed " & (safetyAnchorThisYearBefore - safetyAnchorThisYearAfter)
     end if
 
-    -- ---- Check 2: the G Fund balance floors at zero under a sustained draw;
+    -- ---- Check 2: the mirror image of Check 1 -- a logged New Retirement
+    -- ---- Contribution is a real, permanent ADDITION to Current Predicted
+    -- ---- Wealth (P_track) for that year, and that same increase raises
+    -- ---- the Target Safety Anchor Balance (This Year) proportionally,
+    -- ---- since fresh savings from continued work are real money entering
+    -- ---- the plan, not investment performance. ----
+    tell application "Microsoft Excel"
+        set pTrackBefore2 to value of cell annualDataStart of column 4 of wsRefill
+        set safetyAnchorThisYearBefore2 to value of cell quarterlyDataStart of column 9 of wsRefill
+
+        set value of range "S3" of wsLog to 30000
+        calculate full
+
+        set contribColAfter to value of cell annualDataStart of column 10 of wsRefill
+        set pTrackAfter2 to value of cell annualDataStart of column 4 of wsRefill
+        set safetyAnchorThisYearAfter2 to value of cell quarterlyDataStart of column 9 of wsRefill
+        set safetyPct2 to value of cell annualDataStart of column 8 of wsRefill
+
+        set value of range "S3" of wsLog to 0
+        calculate full
+    end tell
+
+    if not roughlyEqual(contribColAfter, 30000, 1) then
+        error "Contribution pull-through: Annual table's New Retirement Contributions column should read the logged 30000, got " & contribColAfter
+    end if
+    if not roughlyEqual(pTrackAfter2, pTrackBefore2 + 30000, 1) then
+        error "Contribution mirror: Current Predicted Wealth (P_track) should rise by exactly the logged contribution -- expected " & (pTrackBefore2 + 30000) & ", got " & pTrackAfter2
+    end if
+    if not roughlyEqual(safetyAnchorThisYearAfter2, safetyAnchorThisYearBefore2 + (30000 * safetyPct2), 1) then
+        error "Contribution mirror: Target Safety Anchor Balance (This Year) should rise by exactly the logged contribution times that year's Safety Anchor % (proving new savings correctly grow the dollar target) -- expected rise of " & (30000 * safetyPct2) & ", observed " & (safetyAnchorThisYearAfter2 - safetyAnchorThisYearBefore2)
+    end if
+
+    -- ---- Check 3: the G Fund balance floors at zero under a sustained draw;
     -- ---- it must never go negative, in any quarter, regardless of whether
     -- ---- the draw is large enough to also flip a given year's GOOD/POOR
     -- ---- trigger (the floor must hold either way -- this doesn't rely on
@@ -137,7 +169,7 @@ try
         error "G Fund floor: end-of-quarter balance went negative (minimum seen: " & minGFundEnd & ") under a sustained \$2,000/month draw -- MAX(0, ...) floor appears broken"
     end if
 
-    -- ---- Check 3: the Safety Anchor % ramp is linear between Starting and
+    -- ---- Check 4: the Safety Anchor % ramp is linear between Starting and
     -- ---- Ending, using the default 30% -> 20% over 10 years. ----
     tell application "Microsoft Excel"
         set year1Pct to value of cell annualDataStart of column 8 of wsRefill
@@ -151,7 +183,7 @@ try
         error "Ramp linearity: expected ~27% three years in (30% ramping to 20% over 10 years), got " & year4Pct
     end if
 
-    -- ---- Check 4: Default / Override / Effective precedence on a
+    -- ---- Check 5: Default / Override / Effective precedence on a
     -- ---- configured input (Ramp Length). ----
     set rampRow to findRow(wsRefill, "Ramp Length", 20)
 
@@ -178,7 +210,7 @@ try
         error "Default/Override: clearing Override should revert Effective to Default (" & rampDefault & "), got " & rampEffectiveReverted
     end if
 
-    -- ---- Check 5: an unlogged Actual Balance year shows as a true gap
+    -- ---- Check 6: an unlogged Actual Balance year shows as a true gap
     -- ---- (NA()), not a phantom zero, so the Graph tab doesn't plot a fake
     -- ---- data point. ----
     tell application "Microsoft Excel"
@@ -189,7 +221,7 @@ try
         error "NA() gap: an unlogged Actual Balance year should read as a gap (missing value), got " & actualBalanceCell
     end if
 
-    -- ---- Check 6: quarterly Actual Balance logging -- the interpolated
+    -- ---- Check 7: quarterly Actual Balance logging -- the interpolated
     -- ---- Current Predicted Wealth lands at the expected point between the
     -- ---- starting wealth and Year 1's P_track, and logging Q4 of a year
     -- ---- flows through to that year's row on the Annual table. ----
@@ -221,7 +253,7 @@ try
         error "Quarterly Actual Balance: logging Q4 should flow through to the Annual table's year-end figure -- expected 740000, got " & annualBalanceAfter
     end if
 
-    -- ---- Check 7: the Recommended Transfer is bidirectional and respects
+    -- ---- Check 8: the Recommended Transfer is bidirectional and respects
     -- ---- the Minimum Transfer Threshold in either direction. A gap smaller
     -- ---- than the threshold (as a % of that year's P_track) recommends $0;
     -- ---- a gap well beyond it, with the G Fund OVER-funded relative to
@@ -295,7 +327,7 @@ try
     tell application "Microsoft Excel"
         close workbook "$XLSX_NAME" saving no
     end tell
-    log "OK: $XLSX_NAME -- Roth conversion unification, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, quarterly Actual Balance logging, and bidirectional transfer + deadband all behave as designed"
+    log "OK: $XLSX_NAME -- Roth conversion unification, new-contribution mirror, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, quarterly Actual Balance logging, and bidirectional transfer + deadband all behave as designed"
 on error errMsg number errNum
     try
         tell application "Microsoft Excel"

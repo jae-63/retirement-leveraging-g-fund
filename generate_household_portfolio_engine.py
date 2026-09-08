@@ -245,7 +245,8 @@ for para in (
     "Security/Federal COLA each year, every month's actual TSP -> checking payment, the total cost of any "
     "Roth conversion (funded separately, from non-TSP accounts -- converted principal plus whatever share "
     "of the taxes came out of IRA/retirement funds rather than out-of-pocket, combined into one number), "
-    "and once a year, your actual total household balance. Everything "
+    "any new money continued work (yours or your spouse's) adds to a tracked non-Roth account -- a payroll "
+    "contribution, an IRA contribution -- and once a year, your actual total household balance. Everything "
     "else on this tab is a formula built from those inputs.",
 
     "Account_Tracker -- A snapshot of every account's live balance, updated by hand whenever you check "
@@ -260,9 +261,12 @@ for para in (
     "Below that, the Annual SRR Hurdle Model is the strategic gauge: since Roth funds are entirely out of "
     "this tool's scope, a Roth conversion's real cost to the plan -- the converted principal, plus "
     "whatever share of the taxes came out of IRA/retirement funds rather than out-of-pocket -- "
-    "is treated as one real, permanent reduction to the plan's tracked wealth. The same reduction feeds "
-    "both the GOOD/POOR trigger and every real dollar amount (the Safety Anchor balance, recommended "
-    "transfers), so there's no separate 'adjusted' track to keep in sync. Because that reduction typically "
+    "is treated as one real, permanent reduction to the plan's tracked wealth -- and the mirror image "
+    "applies to new money continued work adds to a tracked non-Roth account: it's a real, permanent "
+    "addition to that same tracked wealth, not investment performance. Both feed the same trajectory that "
+    "drives the GOOD/POOR trigger and every real dollar amount (the Safety Anchor balance, recommended "
+    "transfers), so there's no separate 'adjusted' track to keep in sync, and neither a conversion's cost "
+    "nor a fresh contribution can be mistaken for a market move. Because a Roth conversion's cost typically "
     "comes out of non-TSP accounts, it can lower the G Fund's dollar target below its actual balance -- in "
     "that case the engine recommends pulling money back out of the G Fund, the mirror image of its usual "
     "top-up job. The Emergency Liquidity Protocol tells you, in a full-blown crisis, exactly which account "
@@ -298,6 +302,11 @@ checklist = [
     "wealth, so it's not a reduction to it. Roth funds themselves are out of this tool's scope entirely, "
     "so what you do log is a real, permanent reduction to the plan's tracked wealth, not a market downturn "
     "to explain away.",
+    "If continued work (yours or your spouse's) added new money to a tracked non-Roth account this year -- "
+    "a TSP/403b payroll contribution, an IRA contribution -- log the total in the New Retirement "
+    "Contributions column in Variables_And_Log. This keeps fresh savings from being mistaken for market "
+    "outperformance in the GOOD/POOR trigger, while still growing the Safety Anchor's dollar target to "
+    "match the larger tracked pool.",
     "Log this quarter's real total household balance in the \"Actual Balance (Logged, This Quarter)\" "
     "column of the Quarterly Refill Engine table, so the Graph tab has something to plot against the "
     "projections.",
@@ -350,8 +359,10 @@ GLOSSARY = [
                      "considered \"on track\" -- COLA layered on a fixed real-growth baseline."),
     ("W_t / W_q", "Total dollar outflows (withdrawals) for a given year (t) or quarter (q)."),
     ("P_track", "The simulated target portfolio value that the household's actual wealth is measured "
-                "against each year. Reduced by that year's logged Roth Conversion + Tax Cost, since that "
-                "money is a real, permanent exit from the plan's tracked wealth, not a market event."),
+                "against each year. Reduced by that year's logged Roth Conversion + Tax Cost and increased "
+                "by that year's logged New Retirement Contributions, since neither is a market event -- "
+                "both are real, permanent changes to the plan's tracked wealth that would otherwise distort "
+                "the GOOD/POOR trigger."),
     ("SRR", "Sequence-of-Returns Risk -- the risk that a downturn early in retirement forces permanent "
             "sale of depreciated assets."),
     ("TSP G Fund", "The federal Thrift Savings Plan's government-securities fund: principal-protected, "
@@ -376,6 +387,13 @@ GLOSSARY = [
                                     "real, permanent reduction to Current Predicted Wealth (P_track) -- the "
                                     "same reduction feeds the GOOD/POOR trigger and every real dollar amount "
                                     "the plan sizes, so there's no separate adjusted track to reconcile."),
+    ("New Retirement Contributions", "The one number you log per year for new money continued work (yours "
+                                      "or your spouse's) adds to a tracked non-Roth account -- a payroll "
+                                      "contribution, an IRA contribution. The mirror image of Roth "
+                                      "Conversion + Tax Cost: added to Current Predicted Wealth (P_track) "
+                                      "instead of subtracted, so fresh savings raise the plan's tracked "
+                                      "wealth (and the Safety Anchor's dollar target with it) without ever "
+                                      "looking like market outperformance to the GOOD/POOR trigger."),
     ("Minimum Transfer Threshold", "A configured input (Default/Override/Effective, on The_Refill_Engine) "
                                     "setting how large the gap between the Target Safety Anchor Balance and "
                                     "the G Fund's actual balance must be, as a percent of that year's P_track, "
@@ -422,9 +440,9 @@ ws1 = wb.create_sheet("Variables_And_Log")
 
 BANNER_ROW_1 = 1
 ws1.cell(row=BANNER_ROW_1, column=1,
-          value="HOUSEHOLD VARIABLE LOG — ANNUAL HURDLE INPUTS, MONTHLY TSP → CHECKING PAYMENT LOG & "
-                "ROTH CONVERSION COST (2026-2035)")
-LAST_COL_1 = 5 + 12 + 1  # 5 lead cols + 12 months + Roth conversion cost
+          value="HOUSEHOLD VARIABLE LOG — ANNUAL HURDLE INPUTS, MONTHLY TSP → CHECKING PAYMENT LOG, "
+                "ROTH CONVERSION COST & NEW CONTRIBUTIONS (2026-2035)")
+LAST_COL_1 = 5 + 12 + 2  # 5 lead cols + 12 months + Roth conversion cost + new contributions
 ws1.merge_cells(start_row=BANNER_ROW_1, start_column=1, end_row=BANNER_ROW_1, end_column=LAST_COL_1)
 for col in range(1, LAST_COL_1 + 1):
     c = ws1.cell(row=BANNER_ROW_1, column=col)
@@ -442,6 +460,7 @@ ws1_headers = [
     "Total Annual Outflows (W_t)",
 ] + MONTH_NAMES + [
     "Roth Conversion + Tax Cost (This Year)",
+    "New Retirement Contributions (This Year)",
 ]
 for idx, h in enumerate(ws1_headers, start=1):
     ws1.cell(row=HEADER_ROW_1, column=idx, value=h)
@@ -450,6 +469,8 @@ ws1.row_dimensions[HEADER_ROW_1].height = 32
 
 ROTH_CONVERSION_COL = 6 + 12       # R -- IRA-funded Roth conversion + tax total cost, logged as it happens
 ROTH_CONVERSION_COL_LETTER = get_column_letter(ROTH_CONVERSION_COL)
+CONTRIBUTIONS_COL = ROTH_CONVERSION_COL + 1   # S -- new retirement contributions, logged as they happen
+CONTRIBUTIONS_COL_LETTER = get_column_letter(CONTRIBUTIONS_COL)
 
 DATA_START_ROW_1 = HEADER_ROW_1 + 1  # row 3
 for i, year in enumerate(YEARS):
@@ -466,6 +487,7 @@ for i, year in enumerate(YEARS):
     for m, col_letter in enumerate(MONTH_COLS):
         mark_input(style_body_cell(ws1, r, 6 + m, number_format=CURRENCY_FMT))
     mark_input(style_body_cell(ws1, r, ROTH_CONVERSION_COL, number_format=CURRENCY_FMT)).value = 0
+    mark_input(style_body_cell(ws1, r, CONTRIBUTIONS_COL, number_format=CURRENCY_FMT)).value = 0
 
 LAST_DATA_ROW_1 = DATA_START_ROW_1 + len(YEARS) - 1  # row 12 (2035)
 
@@ -479,9 +501,14 @@ ws1.cell(row=note_row_1, column=1,
                 "paid from IRA/retirement funds -- skip taxes paid out-of-pocket, that cash was never part "
                 "of this tool's tracked wealth) in the Roth Conversion + Tax Cost column. Roth funds "
                 "are entirely out of this tool's scope, so The_Refill_Engine treats that whole amount as a "
-                "real, permanent reduction to the plan's tracked wealth. Actual Balance is logged quarterly "
-                "instead, directly in the Quarterly Refill Engine table on The_Refill_Engine, alongside "
-                "everything else you already update there.")
+                "real, permanent reduction to the plan's tracked wealth. If continued work (yours or your "
+                "spouse's) adds new money to a tracked non-Roth account -- a TSP/403b payroll contribution, "
+                "an IRA contribution -- log that total in the New Retirement Contributions column; "
+                "The_Refill_Engine adds it to the plan's tracked wealth the same way it subtracts a Roth "
+                "conversion, so new savings can't be mistaken for market outperformance in the GOOD/POOR "
+                "trigger, while the Safety Anchor's dollar target still grows to match the larger pool. "
+                "Actual Balance is logged quarterly instead, directly in the Quarterly Refill Engine table "
+                "on The_Refill_Engine, alongside everything else you already update there.")
 ws1.cell(row=note_row_1, column=1).font = italic_note_font
 
 legend_row_1 = note_row_1 + 1  # row 15
@@ -803,8 +830,8 @@ for i, year in enumerate(YEARS):
 # ---- ANNUAL SRR HURDLE MODEL (gates the quarterly engine above) ----
 ws3.cell(row=ANNUAL_BANNER_ROW, column=1,
           value="ANNUAL SRR HURDLE MODEL — STRATEGIC PACING CHECK (GATES THE QUARTERLY REFILL ABOVE)")
-ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=9)
-for col in range(1, 10):
+ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=10)
+for col in range(1, 11):
     c = ws3.cell(row=ANNUAL_BANNER_ROW, column=col)
     c.font = section_font
     c.fill = section_fill
@@ -821,6 +848,7 @@ annual_headers = [
     "Performance Logic Trigger",
     "Safety Anchor % (This Year)",
     "Roth Conversion + Tax Cost (This Year)",
+    "New Retirement Contributions (This Year)",
 ]
 for idx, h in enumerate(annual_headers, start=1):
     ws3.cell(row=ANNUAL_HEADER_ROW, column=idx, value=h)
@@ -836,15 +864,18 @@ for i, year in enumerate(YEARS):
     style_body_cell(ws3, r, 3, number_format=CURRENCY_FMT).value = f"='Variables_And_Log'!E{var_log_row}"
 
     # Seeded from the raw Account_Tracker snapshot, then rolled forward each year net of
-    # Annual Outflows AND that year's logged Roth Conversion + Tax Cost (column I) -- since
-    # Roth funds are entirely out of this tool's scope, that cost is a real, permanent exit
-    # from the plan, not a market event, so it belongs in the same trajectory everything
-    # else (the GOOD/POOR trigger, the Safety Anchor's dollar sizing) reads from. There is
-    # deliberately no separate adjusted track anymore.
+    # Annual Outflows, that year's logged Roth Conversion + Tax Cost (column I, subtracted --
+    # Roth funds are entirely out of this tool's scope, so that cost is a real, permanent
+    # exit from the plan, not a market event), and that year's logged New Retirement
+    # Contributions (column J, added -- new savings from continued work are real money
+    # entering the plan, not market performance, so they belong here rather than showing up
+    # as apparent outperformance). Both feed the same trajectory everything else (the
+    # GOOD/POOR trigger, the Safety Anchor's dollar sizing) reads from -- there is
+    # deliberately no separate adjusted track for either.
     if i == 0:
-        target_formula = f"=ROUND((B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{r})-C{r}-I{r},2)"
+        target_formula = f"=ROUND((B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{r})-C{r}-I{r}+J{r},2)"
     else:
-        target_formula = f"=ROUND((D{r - 1}*B{r})-C{r}-I{r},2)"
+        target_formula = f"=ROUND((D{r - 1}*B{r})-C{r}-I{r}+J{r},2)"
     style_body_cell(ws3, r, 4, number_format=CURRENCY_FMT).value = target_formula
 
     # Mirrors Current (D) until you freeze it: once your real starting balances and
@@ -883,6 +914,15 @@ for i, year in enumerate(YEARS):
     # recursive formula above as another category of outflow, same as Annual Outflows.
     style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT).value = (
         f"='Variables_And_Log'!{ROTH_CONVERSION_COL_LETTER}{var_log_row}"
+    )
+
+    # Pulled straight from this year's logged total on Variables_And_Log -- new money added
+    # to a tracked non-Roth account from continued work (a payroll contribution, an IRA
+    # contribution). Feeds column D's recursive formula above as an addition, the mirror
+    # image of the Roth conversion+tax cost column, so new savings raise the plan's tracked
+    # wealth without ever looking like market outperformance to the GOOD/POOR trigger.
+    style_body_cell(ws3, r, 10, number_format=CURRENCY_FMT).value = (
+        f"='Variables_And_Log'!{CONTRIBUTIONS_COL_LETTER}{var_log_row}"
     )
 
     ws3.row_dimensions[r].height = 28
