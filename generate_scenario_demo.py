@@ -13,7 +13,7 @@ household_portfolio_engine.xlsx, sharing the same four-tab structure:
                              Choppy) per year.
   3. Account_Tracker     -- generic starting balances (beginning of Year 1),
                              not a live snapshot.
-  4. The_Refill_Engine   -- same Quarterly Refill Engine / Annual SRR Hurdle
+  4. The_Refill_Engine   -- same Annual Refill Engine / Annual SRR Hurdle
                              Model / Emergency Liquidity Protocol as the live
                              tracker, but the Annual Hurdle Model now also
                              simulates actual household wealth forward under
@@ -67,12 +67,6 @@ thin_border = Border(
     left=Side(style="thin", color=LIGHT_GRAY),
     right=Side(style="thin", color=LIGHT_GRAY),
     top=Side(style="thin", color=LIGHT_GRAY),
-    bottom=Side(style="thin", color=LIGHT_GRAY),
-)
-year_boundary_border = Border(
-    left=Side(style="thin", color=LIGHT_GRAY),
-    right=Side(style="thin", color=LIGHT_GRAY),
-    top=Side(style="medium", color=NAVY),
     bottom=Side(style="thin", color=LIGHT_GRAY),
 )
 
@@ -221,7 +215,7 @@ for para in (
     "This is a demonstration copy of the Household Portfolio Engine -- a two-bucket, decumulation-phase "
     "retirement income strategy built to protect a household from Sequence-of-Returns Risk (SRR). It uses "
     "entirely generic example balances and three hardcoded, hypothetical market-return paths (Bear / Bull "
-    "/ Choppy) so you can watch the engine's core mechanic -- the Quarterly Refill Engine's GOOD/POOR "
+    "/ Choppy) so you can watch the engine's core mechanic -- the Annual Refill Engine's GOOD/POOR "
     "trigger -- actually fire in both directions, instead of having to imagine it.",
 
     "The live version of this workbook is a hand-maintained tracker: real account balances and monthly "
@@ -238,9 +232,9 @@ write_section_banner(ws0, r, "HOW TO USE THE SCENARIO SELECTOR", 2)
 r += 1
 for para in (
     "On The_Refill_Engine tab, the top-left cell lets you choose Bear, Bull, or Choppy from a dropdown. "
-    "Bear applies a front-loaded market crash in years 1-2 followed by a recovery -- watch the Quarterly "
+    "Bear applies a front-loaded market crash in years 1-2 followed by a recovery -- watch the Annual "
     "Refill Engine freeze transfers and the G Fund shield draw down on its own. Bull applies steady, "
-    "consistently strong growth -- the engine should recommend a transfer almost every quarter. Choppy "
+    "consistently strong growth -- the engine should recommend a transfer almost every year. Choppy "
     "applies small, oscillating returns near the hurdle rate -- GOOD and POOR should alternate "
     "unpredictably, which is the case the Safety Anchor is really built for.",
 
@@ -281,7 +275,7 @@ for para in (
     "The_Refill_Engine -- The decision-making tab, plus the scenario selector. A block of configured "
     "inputs (Retirement Start Year, Ramp Length, the G Fund target percentages, etc.) each carry a "
     "Default, an optional Override, and the resulting Effective value everything else on the tab actually "
-    "uses. The Quarterly Refill Engine table is the headline output. The Annual SRR Hurdle Model below it "
+    "uses. The Annual Refill Engine table is the headline output. The Annual SRR Hurdle Model below it "
     "simulates actual household wealth forward year by year under the selected scenario and compares it "
     "to the hurdle target, which is what drives GOOD vs. POOR here.",
 
@@ -325,7 +319,8 @@ GLOSSARY = [
              "retirement benefits."),
     ("Hurdle Rate", "The minimum real (inflation-adjusted) growth rate the portfolio needs to clear to be "
                      "considered \"on track\" -- COLA layered on a fixed real-growth baseline."),
-    ("W_t / W_q", "Total dollar outflows (withdrawals) for a given year (t) or quarter (q)."),
+    ("W_t", "Total dollar outflows (withdrawals) for a given year (t) -- the sum of that year's monthly "
+            "TSP -> checking payments."),
     ("P_track", "The simulated target portfolio value (the hurdle trajectory) that simulated actual "
                 "wealth is measured against each year."),
     ("Scenario", "One of three hardcoded, hypothetical annual market-return paths -- Bear, Bull, or "
@@ -629,7 +624,7 @@ ws3.cell(row=r, column=1,
                 "Starting % to the Ending % over the Ramp Length, then holds flat -- SRR is concentrated in "
                 "the first years of retirement, so the shield is largest when it matters most and eases as "
                 "that window passes. Each year's actual target is computed per-year in the Annual SRR Hurdle "
-                "Model below and drives the Quarterly Refill Engine's 'Target Safety Anchor Balance (This "
+                "Model below and drives the Annual Refill Engine's 'Target Safety Anchor Balance (This "
                 "Year)' column, scaled against that year's simulated wealth path, not a value frozen at "
                 "Year 1. The row above is only a Year-1 snapshot for quick reference. In this demo, GOOD/"
                 "POOR below is driven by the Scenario Selector above, not a live account snapshot.")
@@ -637,86 +632,73 @@ ws3.cell(row=r, column=1).font = italic_note_font
 CONFIG_NOTE_ROW = r
 r += 2  # blank spacer row
 
-# ---- THE QUARTERLY REFILL ENGINE (primary output) ----
-QUARTERLY_BANNER_ROW = r
-ws3.cell(row=QUARTERLY_BANNER_ROW, column=1,
-          value="THE QUARTERLY REFILL ENGINE — PRIMARY OUTPUT: RECOMMENDED TSP TOP-UP TRANSFER")
-ws3.merge_cells(start_row=QUARTERLY_BANNER_ROW, start_column=1, end_row=QUARTERLY_BANNER_ROW, end_column=9)
-for col in range(1, 10):
-    c = ws3.cell(row=QUARTERLY_BANNER_ROW, column=col)
+# ---- THE ANNUAL REFILL ENGINE (primary output) ----
+# One row per year, matching the live tracker: transfers are reviewed once a
+# year, while monthly payments are summed into that year's outflow.
+REFILL_BANNER_ROW = r
+ws3.cell(row=REFILL_BANNER_ROW, column=1,
+          value="THE ANNUAL REFILL ENGINE — PRIMARY OUTPUT: RECOMMENDED TSP TOP-UP TRANSFER (ONCE A YEAR)")
+ws3.merge_cells(start_row=REFILL_BANNER_ROW, start_column=1, end_row=REFILL_BANNER_ROW, end_column=8)
+for col in range(1, 9):
+    c = ws3.cell(row=REFILL_BANNER_ROW, column=col)
     c.font = section_font
     c.fill = section_fill
     c.border = thin_border
-ws3.row_dimensions[QUARTERLY_BANNER_ROW].height = 20
+ws3.row_dimensions[REFILL_BANNER_ROW].height = 20
 
-QUARTERLY_HEADER_ROW = QUARTERLY_BANNER_ROW + 1
-quarterly_headers = [
-    "Year",
-    "Quarter",
-    "Quarterly Outflow (W_q)",
-    "Annual Performance Signal",
-    "G Fund Balance (Start of Qtr)",
-    "Recommended Transfer This Quarter",
-    "Actual Transferred (Log It Here)",
-    "G Fund Balance (End of Qtr, Projected)",
-    "Target Safety Anchor Balance (This Year)",
+REFILL_HEADER_ROW = REFILL_BANNER_ROW + 1
+refill_headers = [
+    "Year",                                       # A
+    "Annual Outflow (W_t)",                       # B
+    "Annual Performance Signal",                  # C
+    "G Fund Balance (Start of Year)",             # D
+    "Recommended Transfer This Year",             # E
+    "Actual Transferred (Log It Here)",           # F
+    "G Fund Balance (End of Year, Projected)",    # G
+    "Target Safety Anchor Balance (This Year)",   # H
 ]
-for idx, h in enumerate(quarterly_headers, start=1):
-    ws3.cell(row=QUARTERLY_HEADER_ROW, column=idx, value=h)
-style_header_row(ws3, QUARTERLY_HEADER_ROW, 1, len(quarterly_headers))
-ws3.row_dimensions[QUARTERLY_HEADER_ROW].height = 40
+for idx, h in enumerate(refill_headers, start=1):
+    ws3.cell(row=REFILL_HEADER_ROW, column=idx, value=h)
+style_header_row(ws3, REFILL_HEADER_ROW, 1, len(refill_headers))
+ws3.row_dimensions[REFILL_HEADER_ROW].height = 40
 
-QUARTER_LABELS = ["Q1", "Q2", "Q3", "Q4"]
-QUARTER_MONTH_SLICES = [(0, 3), (3, 6), (6, 9), (9, 12)]
-
-QUARTERLY_DATA_START = QUARTERLY_HEADER_ROW + 1
-ANNUAL_BANNER_ROW = QUARTERLY_DATA_START + 4 * len(YEARS) - 1 + 3
+REFILL_DATA_START = REFILL_HEADER_ROW + 1
+REFILL_DATA_END = REFILL_DATA_START + len(YEARS) - 1
+ANNUAL_BANNER_ROW = REFILL_DATA_END + 3
 ANNUAL_HEADER_ROW = ANNUAL_BANNER_ROW + 1
 ANNUAL_DATA_START = ANNUAL_HEADER_ROW + 1
 
 for i, year in enumerate(YEARS):
     var_log_row = DATA_START_ROW_1 + i
     annual_row = ANNUAL_DATA_START + i
-    for q, qlabel in enumerate(QUARTER_LABELS):
-        r = QUARTERLY_DATA_START + 4 * i + q
-        border = year_boundary_border if q == 0 else thin_border
+    r = REFILL_DATA_START + i
 
-        style_body_cell(ws3, r, 1, number_format="0", border=border).value = year
-        style_body_cell(ws3, r, 2, border=border).value = qlabel
+    style_body_cell(ws3, r, 1, number_format="0").value = year
+    style_body_cell(ws3, r, 2, number_format=CURRENCY_FMT).value = f"='Variables_And_Log'!E{var_log_row}"
 
-        m0, m1 = QUARTER_MONTH_SLICES[q]
-        col_first, col_last = MONTH_COLS[m0], MONTH_COLS[m1 - 1]
-        style_body_cell(ws3, r, 3, number_format=CURRENCY_FMT, border=border).value = (
-            f"=SUM('Variables_And_Log'!{col_first}{var_log_row}:{col_last}{var_log_row})"
-        )
+    c_cell = style_body_cell(ws3, r, 3)
+    c_cell.value = f"=G{annual_row}"
+    c_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-        d_cell = style_body_cell(ws3, r, 4, border=border)
-        d_cell.value = f"=G{annual_row}"
-        d_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    d_cell = style_body_cell(ws3, r, 4, number_format=CURRENCY_FMT)
+    d_cell.value = f"={G_FUND_BALANCE_CELL}" if i == 0 else f"=G{r - 1}"
 
-        e_cell = style_body_cell(ws3, r, 5, number_format=CURRENCY_FMT, border=border)
-        e_cell.value = f"={G_FUND_BALANCE_CELL}" if r == QUARTERLY_DATA_START else f"=H{r - 1}"
+    h_cell = style_body_cell(ws3, r, 8, number_format=CURRENCY_FMT)
+    h_cell.value = f"=H{annual_row}*D{annual_row}"
 
-        i_cell = style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT, border=border)
-        i_cell.value = f"=H{annual_row}*D{annual_row}"
+    e_cell = style_body_cell(ws3, r, 5, number_format=CURRENCY_FMT, bold=True, fill=accent_fill)
+    e_cell.value = f'=IF(ISNUMBER(SEARCH("GOOD",C{r})),MAX(0,H{r}-D{r}),0)'
 
-        f_cell = style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT, bold=True,
-                                   fill=accent_fill, border=border)
-        f_cell.value = f'=IF(ISNUMBER(SEARCH("GOOD",D{r})),MAX(0,I{r}-E{r}),0)'
+    mark_input(style_body_cell(ws3, r, 6, number_format=CURRENCY_FMT))
 
-        g_cell = mark_input(style_body_cell(ws3, r, 7, number_format=CURRENCY_FMT, border=border))
+    g_cell = style_body_cell(ws3, r, 7, number_format=CURRENCY_FMT)
+    g_cell.value = f'=MAX(0,D{r}-B{r}+IF(F{r}="",E{r},F{r}))'
 
-        h_cell = style_body_cell(ws3, r, 8, number_format=CURRENCY_FMT, border=border)
-        h_cell.value = f'=MAX(0,E{r}-C{r}+IF(G{r}="",F{r},G{r}))'
+    ws3.row_dimensions[r].height = 28
 
-        ws3.row_dimensions[r].height = 28
-
-QUARTERLY_DATA_END = QUARTERLY_DATA_START + 4 * len(YEARS) - 1
-assert ANNUAL_BANNER_ROW == QUARTERLY_DATA_END + 3, "ANNUAL_BANNER_ROW constant must match actual layout"
-
-# ---- ANNUAL SRR HURDLE MODEL (gates the quarterly engine above) ----
+# ---- ANNUAL SRR HURDLE MODEL (gates the annual refill engine above) ----
 ws3.cell(row=ANNUAL_BANNER_ROW, column=1,
-          value="ANNUAL SRR HURDLE MODEL — SIMULATED WEALTH VS. HURDLE (GATES THE QUARTERLY REFILL ABOVE)")
+          value="ANNUAL SRR HURDLE MODEL — SIMULATED WEALTH VS. HURDLE (GATES THE ANNUAL REFILL ABOVE)")
 ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=8)
 for col in range(1, 9):
     c = ws3.cell(row=ANNUAL_BANNER_ROW, column=col)
@@ -833,7 +815,7 @@ runway_status_cell.border = thin_border
 note_row_3 = RUNWAY_ROW + 1
 ws3.cell(row=note_row_3, column=1,
           value="(Runway uses the average of 2026's monthly TSP payments, and the G Fund's Year-1 "
-                "starting balance -- it does not reflect the quarter-by-quarter projection above.)")
+                "starting balance -- it does not reflect the year-by-year projection above.)")
 ws3.cell(row=note_row_3, column=1).font = italic_note_font
 
 # ---- EMERGENCY LIQUIDITY PROTOCOL ----
@@ -920,7 +902,7 @@ ws3.conditional_formatting.add(
 )
 
 enable_gridlines(ws3)
-ws3.freeze_panes = f"A{QUARTERLY_DATA_START}"
+ws3.freeze_panes = f"A{REFILL_DATA_START}"
 
 # --------------------------------------------------------------------------
 # Autofit + explicit widths + final gridline pass for every tab
