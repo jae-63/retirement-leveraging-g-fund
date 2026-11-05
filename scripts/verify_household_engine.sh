@@ -80,9 +80,9 @@ end tell
 
 try
     -- Shared row lookups, used by several checks below.
-    set quarterlyBannerRow to findRow(wsRefill, "PRIMARY OUTPUT", 200)
-    set quarterlyDataStart to quarterlyBannerRow + 2
-    set quarterlyDataEnd to quarterlyDataStart + 39 -- 10 years x 4 quarters
+    set refillBannerRow to findRow(wsRefill, "PRIMARY OUTPUT", 200)
+    set refillDataStart to refillBannerRow + 2
+    set refillDataEnd to refillDataStart + 9 -- 10 years, one row each
     set annualBannerRow to findRow(wsRefill, "STRATEGIC PACING CHECK", 200)
     set annualDataStart to annualBannerRow + 2
 
@@ -98,14 +98,14 @@ try
     -- ---- market event to net back out. ----
     tell application "Microsoft Excel"
         set pTrackBefore to value of cell annualDataStart of column 4 of wsRefill
-        set safetyAnchorThisYearBefore to value of cell quarterlyDataStart of column 9 of wsRefill
+        set safetyAnchorThisYearBefore to value of cell refillDataStart of column 8 of wsRefill
 
         set value of range "R3" of wsLog to 50000
         calculate full
 
         set rothColAfter to value of cell annualDataStart of column 9 of wsRefill
         set pTrackAfter to value of cell annualDataStart of column 4 of wsRefill
-        set safetyAnchorThisYearAfter to value of cell quarterlyDataStart of column 9 of wsRefill
+        set safetyAnchorThisYearAfter to value of cell refillDataStart of column 8 of wsRefill
         set safetyPct to value of cell annualDataStart of column 8 of wsRefill
 
         set value of range "R3" of wsLog to 0
@@ -131,14 +131,14 @@ try
     -- ---- the plan, not investment performance. ----
     tell application "Microsoft Excel"
         set pTrackBefore2 to value of cell annualDataStart of column 4 of wsRefill
-        set safetyAnchorThisYearBefore2 to value of cell quarterlyDataStart of column 9 of wsRefill
+        set safetyAnchorThisYearBefore2 to value of cell refillDataStart of column 8 of wsRefill
 
         set value of range "S3" of wsLog to 30000
         calculate full
 
         set contribColAfter to value of cell annualDataStart of column 10 of wsRefill
         set pTrackAfter2 to value of cell annualDataStart of column 4 of wsRefill
-        set safetyAnchorThisYearAfter2 to value of cell quarterlyDataStart of column 9 of wsRefill
+        set safetyAnchorThisYearAfter2 to value of cell refillDataStart of column 8 of wsRefill
         set safetyPct2 to value of cell annualDataStart of column 8 of wsRefill
 
         set value of range "S3" of wsLog to 0
@@ -157,7 +157,7 @@ try
 
     log "verify_household_engine: starting Check 3"
     -- ---- Check 3: the G Fund balance floors at zero under a sustained draw;
-    -- ---- it must never go negative, in any quarter, regardless of whether
+    -- ---- it must never go negative, in any year, regardless of whether
     -- ---- the draw is large enough to also flip a given year's GOOD/POOR
     -- ---- trigger (the floor must hold either way -- this doesn't rely on
     -- ---- staying POOR, just on a real, nontrivial draw over the horizon). ----
@@ -168,7 +168,7 @@ try
             end repeat
         end repeat
         calculate full
-        set gFundEndVals to value of (range (("H" & quarterlyDataStart) & ":H" & quarterlyDataEnd) of wsRefill)
+        set gFundEndVals to value of (range (("G" & refillDataStart) & ":G" & refillDataEnd) of wsRefill)
         repeat with rowIdx from 3 to 12
             repeat with col in {"F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"}
                 set value of range (col & rowIdx) of wsLog to ""
@@ -184,7 +184,7 @@ try
         end repeat
     end repeat
     if minGFundEnd < 0 then
-        error "G Fund floor: end-of-quarter balance went negative (minimum seen: " & minGFundEnd & ") under a sustained \$2,000/month draw -- MAX(0, ...) floor appears broken"
+        error "G Fund floor: end-of-year balance went negative (minimum seen: " & minGFundEnd & ") under a sustained \$2,000/month draw -- MAX(0, ...) floor appears broken"
     end if
 
     log "verify_household_engine: starting Check 4"
@@ -243,36 +243,28 @@ try
     end if
 
     log "verify_household_engine: starting Check 7"
-    -- ---- Check 7: quarterly Actual Balance logging -- the interpolated
-    -- ---- Current Predicted Wealth lands at the expected point between the
-    -- ---- starting wealth and Year 1's P_track, and logging Q4 of a year
-    -- ---- flows through to that year's row on the Annual table. ----
-    tell application "Microsoft Excel"
-        set startingWealth to value of cell 1 of column 2 of wsRefill
-        set year1PTrack to value of cell annualDataStart of column 4 of wsRefill
-        set q1InterpCurrent to value of cell quarterlyDataStart of column 11 of wsRefill
-    end tell
-
-    set expectedQ1 to startingWealth + (year1PTrack - startingWealth) * 0.25
-    if not roughlyEqual(q1InterpCurrent, expectedQ1, 1) then
-        error "Quarterly interpolation: Q1's interpolated Current Predicted Wealth should be 25% of the way from starting wealth to Year 1's P_track -- expected " & expectedQ1 & ", got " & q1InterpCurrent
-    end if
-
-    set q4Row to quarterlyDataStart + 3
+    -- ---- Check 7: annual Actual Balance logging -- logging a year-end
+    -- ---- balance on the Annual Refill Engine table flows through to that
+    -- ---- year's row on the Annual SRR Hurdle Model (which the Graph tab
+    -- ---- plots), and clearing it restores the NA() gap. ----
     tell application "Microsoft Excel"
         set annualBalanceBefore to value of cell annualDataStart of column 6 of wsRefill
-        set value of range (("J" & q4Row)) of wsRefill to 740000
+        set value of range (("I" & refillDataStart)) of wsRefill to 740000
         calculate full
         set annualBalanceAfter to value of cell annualDataStart of column 6 of wsRefill
-        set value of range (("J" & q4Row)) of wsRefill to ""
+        set value of range (("I" & refillDataStart)) of wsRefill to ""
         calculate full
+        set annualBalanceReverted to value of cell annualDataStart of column 6 of wsRefill
     end tell
 
     if annualBalanceBefore is not missing value then
-        error "Quarterly Actual Balance: expected the Annual table's Actual Balance to start as a gap before Q4 is logged, got " & annualBalanceBefore
+        error "Annual Actual Balance: expected the Annual table's Actual Balance to start as a gap before the year-end balance is logged, got " & annualBalanceBefore
     end if
     if not roughlyEqual(annualBalanceAfter, 740000, 1) then
-        error "Quarterly Actual Balance: logging Q4 should flow through to the Annual table's year-end figure -- expected 740000, got " & annualBalanceAfter
+        error "Annual Actual Balance: logging the year-end balance should flow through to the Annual table -- expected 740000, got " & annualBalanceAfter
+    end if
+    if annualBalanceReverted is not missing value then
+        error "Annual Actual Balance: clearing the logged balance should restore the gap, got " & annualBalanceReverted
     end if
 
     log "verify_household_engine: starting Check 8"
@@ -289,7 +281,7 @@ try
     tell application "Microsoft Excel"
         set gFundOriginal to value of cell 2 of column 3 of wsTracker
         set conduitOriginal to value of cell 3 of column 3 of wsTracker
-        set targetThisYear to value of cell quarterlyDataStart of column 9 of wsRefill
+        set targetThisYear to value of cell refillDataStart of column 8 of wsRefill
         set thresholdPct to value of cell minTransferRow of column 4 of wsRefill
         set pTrackYear1 to value of cell annualDataStart of column 4 of wsRefill
     end tell
@@ -312,7 +304,7 @@ try
         set value of range "C2" of wsTracker to gFundOriginal + deltaSmall
         set value of range "C3" of wsTracker to conduitOriginal - deltaSmall
         calculate full
-        set recommendedSmallGap to value of cell quarterlyDataStart of column 6 of wsRefill
+        set recommendedSmallGap to value of cell refillDataStart of column 5 of wsRefill
         set value of range "C2" of wsTracker to gFundOriginal
         set value of range "C3" of wsTracker to conduitOriginal
         calculate full
@@ -324,16 +316,16 @@ try
 
     -- 7b: G Fund balance sits well ABOVE target -- should recommend pulling
     -- the exact excess back out (a negative transfer), and the projected
-    -- End of Qtr balance should reflect that pull, not just the raw balance.
+    -- end-of-year balance should reflect that pull, not just the raw balance.
     set desiredGFundLarge to targetThisYear + (thresholdDollar * 3)
     set deltaLarge to desiredGFundLarge - gFundOriginal
     tell application "Microsoft Excel"
         set value of range "C2" of wsTracker to gFundOriginal + deltaLarge
         set value of range "C3" of wsTracker to conduitOriginal - deltaLarge
         calculate full
-        set recommendedPullOut to value of cell quarterlyDataStart of column 6 of wsRefill
-        set endOfQtrProjected to value of cell quarterlyDataStart of column 8 of wsRefill
-        set quarterlyOutflow to value of cell quarterlyDataStart of column 3 of wsRefill
+        set recommendedPullOut to value of cell refillDataStart of column 5 of wsRefill
+        set endOfYearProjected to value of cell refillDataStart of column 7 of wsRefill
+        set annualOutflow to value of cell refillDataStart of column 2 of wsRefill
 
         set value of range "C2" of wsTracker to gFundOriginal
         set value of range "C3" of wsTracker to conduitOriginal
@@ -343,8 +335,8 @@ try
     if not roughlyEqual(recommendedPullOut, -(thresholdDollar * 3), 1) then
         error "Bidirectional transfer: an over-funded G Fund should recommend pulling the exact excess back out -- expected " & -(thresholdDollar * 3) & ", got " & recommendedPullOut
     end if
-    if not roughlyEqual(endOfQtrProjected, targetThisYear - quarterlyOutflow, 1) then
-        error "Bidirectional transfer: G Fund Balance (End of Qtr, Projected) should reflect the negative transfer pulling the balance back down to (roughly) target -- expected " & (targetThisYear - quarterlyOutflow) & ", got " & endOfQtrProjected
+    if not roughlyEqual(endOfYearProjected, targetThisYear - annualOutflow, 1) then
+        error "Bidirectional transfer: G Fund Balance (End of Year, Projected) should reflect the negative transfer pulling the balance back down to (roughly) target -- expected " & (targetThisYear - annualOutflow) & ", got " & endOfYearProjected
     end if
 
     log "verify_household_engine: starting Check 9"
@@ -370,7 +362,7 @@ try
         set gTargetCost9 to value of cell annualDataStart of column 14 of wsRefill
         set qlacPv9 to value of cell annualDataStart of column 12 of wsRefill
         set safetyPct9 to value of cell annualDataStart of column 8 of wsRefill
-        set quarterlyTarget9 to value of cell quarterlyDataStart of column 9 of wsRefill
+        set refillTarget9 to value of cell refillDataStart of column 8 of wsRefill
 
         set value of range ("C" & modeRow) of wsRefill to "NONE"
         calculate full
@@ -396,8 +388,8 @@ try
     if not roughlyEqual(gTargetCost9, gTargetBefore9 - 210000, 1) then
         error "QLAC COST mode: the G Fund's dollar target should fall by exactly the premium -- expected " & (gTargetBefore9 - 210000) & ", got " & gTargetCost9
     end if
-    if not roughlyEqual(quarterlyTarget9, gTargetCost9, 1) then
-        error "QLAC target wiring: the quarterly Target Safety Anchor Balance should read the annual G Fund dollar target -- expected " & gTargetCost9 & ", got " & quarterlyTarget9
+    if not roughlyEqual(refillTarget9, gTargetCost9, 1) then
+        error "QLAC target wiring: the Annual Refill Engine's Target Safety Anchor Balance should read the annual G Fund dollar target -- expected " & gTargetCost9 & ", got " & refillTarget9
     end if
     if not roughlyEqual(gTargetNone9, pTrackAfter9 * safetyPct9, 1) then
         error "QLAC NONE mode: the G Fund's dollar target should be P_track x Safety Anchor % -- expected " & (pTrackAfter9 * safetyPct9) & ", got " & gTargetNone9
@@ -412,7 +404,7 @@ try
     tell application "Microsoft Excel"
         close workbook "$XLSX_NAME" saving no
     end tell
-    log "OK: $XLSX_NAME -- Roth conversion unification, new-contribution mirror, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, quarterly Actual Balance logging, bidirectional transfer + deadband, and QLAC premium/valuation all behave as designed"
+    log "OK: $XLSX_NAME -- Roth conversion unification, new-contribution mirror, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, annual Actual Balance logging, bidirectional transfer + deadband, and QLAC premium/valuation all behave as designed"
 on error errMsg number errNum
     try
         tell application "Microsoft Excel"

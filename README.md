@@ -5,9 +5,9 @@ federal TSP G Fund as a Sequence-of-Returns-Risk (SRR) shield.
 
 The core idea: the G Fund is principal-protected and instantly liquid, so it serves as
 the household's operating cash account — monthly bills are paid straight out of it,
-meaning equities never have to be sold to cover routine expenses. A Quarterly Refill
-Engine decides, each quarter, whether it's safe to harvest equity gains and roll them
-back into the G Fund to top the shield up, gated by an annual hurdle model that compares
+meaning equities never have to be sold to cover routine expenses. An Annual Refill
+Engine decides, once a year, whether it's safe to harvest equity gains and roll them
+back into the G Fund to top the shield up (or to pull an excess back out), gated by an annual hurdle model that compares
 household wealth against a real-growth (COLA + baseline) target.
 
 ## What's in this repo
@@ -24,15 +24,15 @@ alongside the script that produced it:
 
 Five tabs, in order:
 
-1. **Documentation** — motivation, a quarterly checklist, the color legend, and a glossary.
+1. **Documentation** — motivation, an annual checklist, the color legend, and a glossary.
 2. **Variables_And_Log** — annual COLA/hurdle inputs, a monthly TSP → checking payment
    log, a Roth conversion tax-cost log, and an annual Actual Balance log.
 3. **Account_Tracker** — a manually-updated snapshot of every account's balance; the
    single source of truth for household net worth.
 4. **The_Refill_Engine** — the decision-making tab. Every configured input (retirement
    start year, ramp length, G Fund target percentages, etc.) is laid out as
-   Default / Override / Effective columns. The Quarterly Refill Engine table is the
-   primary output; below it, the Annual SRR Hurdle Model decides GOOD vs. POOR for the
+   Default / Override / Effective columns. The Annual Refill Engine table (one row per
+   year) is the primary output; below it, the Annual SRR Hurdle Model decides GOOD vs. POOR for the
    year (using wealth adjusted for any logged Roth conversion cost, so a planned tax
    bill is never mistaken for a market downturn), and the Emergency Liquidity Protocol
    gives a next-dollar draw-down order if the shield is ever exhausted.
