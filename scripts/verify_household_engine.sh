@@ -57,10 +57,25 @@ end roughlyEqual
 
 tell application "Microsoft Excel"
     open (POSIX file "$XLSX_PATH")
+    -- Excel's open can return before the workbook is actually loaded (seen in
+    -- practice: "active workbook" was still missing value right after open),
+    -- so wait for it by name -- and address it by name below rather than via
+    -- "active workbook", which is only as reliable as whatever has focus.
+    set openedOK to false
+    repeat with attempt from 1 to 120
+        try
+            get name of workbook "$XLSX_NAME"
+            set openedOK to true
+            exit repeat
+        on error
+            delay 0.5
+        end try
+    end repeat
+    if not openedOK then error "$XLSX_NAME did not open within 60 seconds -- check Excel for a dialog (file repair, already open, etc.)" number 1
     calculate full
-    set wsRefill to worksheet "The_Refill_Engine" of active workbook
-    set wsLog to worksheet "Variables_And_Log" of active workbook
-    set wsTracker to worksheet "Account_Tracker" of active workbook
+    set wsRefill to worksheet "The_Refill_Engine" of workbook "$XLSX_NAME"
+    set wsLog to worksheet "Variables_And_Log" of workbook "$XLSX_NAME"
+    set wsTracker to worksheet "Account_Tracker" of workbook "$XLSX_NAME"
 end tell
 
 try
@@ -71,6 +86,7 @@ try
     set annualBannerRow to findRow(wsRefill, "STRATEGIC PACING CHECK", 200)
     set annualDataStart to annualBannerRow + 2
 
+    log "verify_household_engine: starting Check 1"
     -- ---- Check 1: a logged Roth conversion + tax cost is a real, permanent
     -- ---- reduction to Current Predicted Wealth (P_track) for that year --
     -- ---- and that SAME reduction flows through to both the Target Safety
@@ -106,6 +122,7 @@ try
         error "Roth unification: Target Safety Anchor Balance (This Year) should fall by exactly the logged cost times that year's Safety Anchor % (proving it shares the same reduced basis as the trigger) -- expected drop of " & (50000 * safetyPct) & ", observed " & (safetyAnchorThisYearBefore - safetyAnchorThisYearAfter)
     end if
 
+    log "verify_household_engine: starting Check 2"
     -- ---- Check 2: the mirror image of Check 1 -- a logged New Retirement
     -- ---- Contribution is a real, permanent ADDITION to Current Predicted
     -- ---- Wealth (P_track) for that year, and that same increase raises
@@ -138,6 +155,7 @@ try
         error "Contribution mirror: Target Safety Anchor Balance (This Year) should rise by exactly the logged contribution times that year's Safety Anchor % (proving new savings correctly grow the dollar target) -- expected rise of " & (30000 * safetyPct2) & ", observed " & (safetyAnchorThisYearAfter2 - safetyAnchorThisYearBefore2)
     end if
 
+    log "verify_household_engine: starting Check 3"
     -- ---- Check 3: the G Fund balance floors at zero under a sustained draw;
     -- ---- it must never go negative, in any quarter, regardless of whether
     -- ---- the draw is large enough to also flip a given year's GOOD/POOR
@@ -169,6 +187,7 @@ try
         error "G Fund floor: end-of-quarter balance went negative (minimum seen: " & minGFundEnd & ") under a sustained \$2,000/month draw -- MAX(0, ...) floor appears broken"
     end if
 
+    log "verify_household_engine: starting Check 4"
     -- ---- Check 4: the Safety Anchor % ramp is linear between Starting and
     -- ---- Ending, using the default 30% -> 20% over 10 years. ----
     tell application "Microsoft Excel"
@@ -183,6 +202,7 @@ try
         error "Ramp linearity: expected ~27% three years in (30% ramping to 20% over 10 years), got " & year4Pct
     end if
 
+    log "verify_household_engine: starting Check 5"
     -- ---- Check 5: Default / Override / Effective precedence on a
     -- ---- configured input (Ramp Length). ----
     set rampRow to findRow(wsRefill, "Ramp Length", 20)
@@ -210,6 +230,7 @@ try
         error "Default/Override: clearing Override should revert Effective to Default (" & rampDefault & "), got " & rampEffectiveReverted
     end if
 
+    log "verify_household_engine: starting Check 6"
     -- ---- Check 6: an unlogged Actual Balance year shows as a true gap
     -- ---- (NA()), not a phantom zero, so the Graph tab doesn't plot a fake
     -- ---- data point. ----
@@ -221,6 +242,7 @@ try
         error "NA() gap: an unlogged Actual Balance year should read as a gap (missing value), got " & actualBalanceCell
     end if
 
+    log "verify_household_engine: starting Check 7"
     -- ---- Check 7: quarterly Actual Balance logging -- the interpolated
     -- ---- Current Predicted Wealth lands at the expected point between the
     -- ---- starting wealth and Year 1's P_track, and logging Q4 of a year
@@ -253,6 +275,7 @@ try
         error "Quarterly Actual Balance: logging Q4 should flow through to the Annual table's year-end figure -- expected 740000, got " & annualBalanceAfter
     end if
 
+    log "verify_household_engine: starting Check 8"
     -- ---- Check 8: the Recommended Transfer is bidirectional and respects
     -- ---- the Minimum Transfer Threshold in either direction. A gap smaller
     -- ---- than the threshold (as a % of that year's P_track) recommends $0;
@@ -324,10 +347,72 @@ try
         error "Bidirectional transfer: G Fund Balance (End of Qtr, Projected) should reflect the negative transfer pulling the balance back down to (roughly) target -- expected " & (targetThisYear - quarterlyOutflow) & ", got " & endOfQtrProjected
     end if
 
+    log "verify_household_engine: starting Check 9"
+    -- ---- Check 9: a QLAC purchase is handled like a Roth conversion -- the
+    -- ---- premium leaves the plan's liquid, tracked wealth, so P_track drops
+    -- ---- by exactly that amount. In the default COST count mode, the G Fund's
+    -- ---- own dollar target then falls by exactly the premium (the purchase
+    -- ---- came out of the safe share); in NONE mode it is simply P_track x
+    -- ---- Safety Anchor %; and marking the annuitant deceased zeroes the
+    -- ---- QLAC's present value (no death benefit is modeled). ----
+    set modeRow to findRow(wsRefill, "QLAC: Count Toward", 40)
+    set aliveRow to findRow(wsRefill, "QLAC: Annuitant Living", 40)
+
+    tell application "Microsoft Excel"
+        set pTrackBefore9 to value of cell annualDataStart of column 4 of wsRefill
+        set gTargetBefore9 to value of cell annualDataStart of column 14 of wsRefill
+
+        set value of range "T3" of wsLog to 210000
+        set value of range "U3" of wsLog to 90000
+        calculate full
+        set premiumCol9 to value of cell annualDataStart of column 11 of wsRefill
+        set pTrackAfter9 to value of cell annualDataStart of column 4 of wsRefill
+        set gTargetCost9 to value of cell annualDataStart of column 14 of wsRefill
+        set qlacPv9 to value of cell annualDataStart of column 12 of wsRefill
+        set safetyPct9 to value of cell annualDataStart of column 8 of wsRefill
+        set quarterlyTarget9 to value of cell quarterlyDataStart of column 9 of wsRefill
+
+        set value of range ("C" & modeRow) of wsRefill to "NONE"
+        calculate full
+        set gTargetNone9 to value of cell annualDataStart of column 14 of wsRefill
+
+        set value of range ("C" & aliveRow) of wsRefill to 0
+        calculate full
+        set qlacPvDeceased9 to value of cell annualDataStart of column 12 of wsRefill
+
+        set value of range ("C" & aliveRow) of wsRefill to ""
+        set value of range ("C" & modeRow) of wsRefill to ""
+        set value of range "T3" of wsLog to 0
+        set value of range "U3" of wsLog to 0
+        calculate full
+    end tell
+
+    if not roughlyEqual(premiumCol9, 210000, 1) then
+        error "QLAC pull-through: Annual table's QLAC Premium Paid column should read the logged 210000, got " & premiumCol9
+    end if
+    if not roughlyEqual(pTrackAfter9, pTrackBefore9 - 210000, 1) then
+        error "QLAC premium: Current Predicted Wealth (P_track) should drop by exactly the logged premium -- expected " & (pTrackBefore9 - 210000) & ", got " & pTrackAfter9
+    end if
+    if not roughlyEqual(gTargetCost9, gTargetBefore9 - 210000, 1) then
+        error "QLAC COST mode: the G Fund's dollar target should fall by exactly the premium -- expected " & (gTargetBefore9 - 210000) & ", got " & gTargetCost9
+    end if
+    if not roughlyEqual(quarterlyTarget9, gTargetCost9, 1) then
+        error "QLAC target wiring: the quarterly Target Safety Anchor Balance should read the annual G Fund dollar target -- expected " & gTargetCost9 & ", got " & quarterlyTarget9
+    end if
+    if not roughlyEqual(gTargetNone9, pTrackAfter9 * safetyPct9, 1) then
+        error "QLAC NONE mode: the G Fund's dollar target should be P_track x Safety Anchor % -- expected " & (pTrackAfter9 * safetyPct9) & ", got " & gTargetNone9
+    end if
+    if not (qlacPv9 > 0) then
+        error "QLAC PV: a logged \$90,000/yr tranche should have a positive present value, got " & qlacPv9
+    end if
+    if not roughlyEqual(qlacPvDeceased9, 0, 0.01) then
+        error "QLAC deceased: present value should be 0 once the annuitant is marked deceased, got " & qlacPvDeceased9
+    end if
+
     tell application "Microsoft Excel"
         close workbook "$XLSX_NAME" saving no
     end tell
-    log "OK: $XLSX_NAME -- Roth conversion unification, new-contribution mirror, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, quarterly Actual Balance logging, and bidirectional transfer + deadband all behave as designed"
+    log "OK: $XLSX_NAME -- Roth conversion unification, new-contribution mirror, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, quarterly Actual Balance logging, bidirectional transfer + deadband, and QLAC premium/valuation all behave as designed"
 on error errMsg number errNum
     try
         tell application "Microsoft Excel"

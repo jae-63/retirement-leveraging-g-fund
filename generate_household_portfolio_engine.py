@@ -44,6 +44,7 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, Reference
+from openpyxl.worksheet.datavalidation import DataValidation
 
 # --------------------------------------------------------------------------
 # Corporate "Classic Navy" palette
@@ -230,6 +231,14 @@ for para in (
     "built for stability (the TSP G Fund, a spouse's workplace plan), while private IRAs hold the aggressive "
     "growth positions and serve as Roth-conversion conduits -- keeping each spouse's accounts doing the job "
     "they're best suited for.",
+
+    "4. An optional longevity bucket (QLAC). A Qualified Longevity Annuity Contract bought with pre-tax "
+    "money insures the far tail -- income that starts late (up to age 85) and lasts for life -- while the G "
+    "Fund protects the near term. Both are \"safe\" money but they do opposite jobs, so the QLAC is tracked "
+    "as its own illiquid asset: its premium leaves the plan's spendable, tracked wealth (subtracted from "
+    "P_track the same way a Roth conversion is), it is never part of the shield's runway or the Emergency "
+    "Liquidity Protocol, and it can optionally be counted toward the G Fund target's safe share -- at cost "
+    "or at present value -- so the G Fund only has to hold the rest.",
 ):
     write_paragraph(ws0, r, para, chars_per_line=DOC_CHARS_PER_LINE)
     r += 1
@@ -315,6 +324,9 @@ checklist = [
     "freeze it as your baseline -- never touch it again after that.",
     "If the TSP G Fund is ever fully drawn down, check the Emergency Liquidity Protocol block for the "
     "next-dollar priority order.",
+    "If you bought a QLAC tranche this year, log its premium and the guaranteed annual income it buys in "
+    "Variables_And_Log (year of purchase), and confirm the QLAC inputs on The_Refill_Engine (birth year, "
+    "income start age, count mode). If the annuitant dies, set \"Annuitant Living?\" to 0.",
 ]
 for i, item in enumerate(checklist, start=1):
     num_cell = ws0.cell(row=r, column=1, value=f"{i}.")
@@ -413,6 +425,28 @@ GLOSSARY = [
     ("Rollover", "A pre-tax transfer of funds between retirement accounts (e.g. Traditional IRA to TSP) "
                  "that doesn't trigger a taxable distribution."),
     ("Allocation Mix", "Each account's share of total household net worth, shown on Account_Tracker."),
+    ("QLAC", "Qualified Longevity Annuity Contract: a deferred income annuity bought inside a pre-tax "
+             "account, excluded from RMDs until its income starts (no later than age 85). Modeled here with "
+             "no death benefit: illiquid, mortality-contingent, worth nothing once the annuitant dies."),
+    ("QLAC Premium Paid", "The one number you log per purchase year for a QLAC. It leaves the plan's liquid, "
+                           "tracked wealth, so the Annual SRR Hurdle Model subtracts it from P_track exactly "
+                           "the way it subtracts a Roth Conversion + Tax Cost -- the GOOD/POOR trigger is "
+                           "never fooled by the drop, and the dollar targets shrink to match the smaller "
+                           "liquid pool."),
+    ("QLAC Present Value", "The expected, survival-weighted, discounted value of the QLAC's remaining "
+                            "income stream at a given age. Starts below the premium, rises toward the "
+                            "income start age, then falls as payments are received. Shown on "
+                            "Account_Tracker below the liquid total, and projected per year on the Annual "
+                            "SRR Hurdle Model."),
+    ("Gompertz Mortality", "A two-parameter survival curve used to weight QLAC payments: the modal age "
+                            "(most common age at death) and the dispersion (spread, in years). The defaults "
+                            "approximate a woman in the top income quintile; adjust them, don't treat them "
+                            "as precise."),
+    ("QLAC Count Mode", "How the QLAC counts toward the G Fund target's safe share: COST (premiums paid, "
+                         "the conservative default -- doesn't let an appreciating, mortality-contingent "
+                         "value crowd out liquid G Fund), PV (present value), or NONE (outside the target). "
+                         "In COST mode, a purchase lowers the G Fund's own dollar target by exactly the "
+                         "premium, matching a purchase funded out of the safe share."),
 ]
 for term, definition in GLOSSARY:
     term_cell = ws0.cell(row=r, column=1, value=term)
@@ -441,8 +475,8 @@ ws1 = wb.create_sheet("Variables_And_Log")
 BANNER_ROW_1 = 1
 ws1.cell(row=BANNER_ROW_1, column=1,
           value="HOUSEHOLD VARIABLE LOG — ANNUAL HURDLE INPUTS, MONTHLY TSP → CHECKING PAYMENT LOG, "
-                "ROTH CONVERSION COST & NEW CONTRIBUTIONS (2026-2035)")
-LAST_COL_1 = 5 + 12 + 2  # 5 lead cols + 12 months + Roth conversion cost + new contributions
+                "ROTH CONVERSION COST, NEW CONTRIBUTIONS & QLAC PURCHASES (2026-2035)")
+LAST_COL_1 = 5 + 12 + 2 + 2  # 5 lead cols + 12 months + Roth cost + new contributions + 2 QLAC cols
 ws1.merge_cells(start_row=BANNER_ROW_1, start_column=1, end_row=BANNER_ROW_1, end_column=LAST_COL_1)
 for col in range(1, LAST_COL_1 + 1):
     c = ws1.cell(row=BANNER_ROW_1, column=col)
@@ -461,6 +495,8 @@ ws1_headers = [
 ] + MONTH_NAMES + [
     "Roth Conversion + Tax Cost (This Year)",
     "New Retirement Contributions (This Year)",
+    "QLAC Premium Paid (This Year)",
+    "QLAC Guaranteed Annual Income Purchased (This Year)",
 ]
 for idx, h in enumerate(ws1_headers, start=1):
     ws1.cell(row=HEADER_ROW_1, column=idx, value=h)
@@ -471,6 +507,10 @@ ROTH_CONVERSION_COL = 6 + 12       # R -- IRA-funded Roth conversion + tax total
 ROTH_CONVERSION_COL_LETTER = get_column_letter(ROTH_CONVERSION_COL)
 CONTRIBUTIONS_COL = ROTH_CONVERSION_COL + 1   # S -- new retirement contributions, logged as they happen
 CONTRIBUTIONS_COL_LETTER = get_column_letter(CONTRIBUTIONS_COL)
+QLAC_PREMIUM_COL = CONTRIBUTIONS_COL + 1   # T -- premium moved from a tracked pre-tax account into a QLAC
+QLAC_PREMIUM_COL_LETTER = get_column_letter(QLAC_PREMIUM_COL)
+QLAC_INCOME_COL = CONTRIBUTIONS_COL + 2    # U -- guaranteed annual income that tranche buys
+QLAC_INCOME_COL_LETTER = get_column_letter(QLAC_INCOME_COL)
 
 DATA_START_ROW_1 = HEADER_ROW_1 + 1  # row 3
 for i, year in enumerate(YEARS):
@@ -488,6 +528,8 @@ for i, year in enumerate(YEARS):
         mark_input(style_body_cell(ws1, r, 6 + m, number_format=CURRENCY_FMT))
     mark_input(style_body_cell(ws1, r, ROTH_CONVERSION_COL, number_format=CURRENCY_FMT)).value = 0
     mark_input(style_body_cell(ws1, r, CONTRIBUTIONS_COL, number_format=CURRENCY_FMT)).value = 0
+    mark_input(style_body_cell(ws1, r, QLAC_PREMIUM_COL, number_format=CURRENCY_FMT)).value = 0
+    mark_input(style_body_cell(ws1, r, QLAC_INCOME_COL, number_format=CURRENCY_FMT)).value = 0
 
 LAST_DATA_ROW_1 = DATA_START_ROW_1 + len(YEARS) - 1  # row 12 (2035)
 
@@ -507,6 +549,11 @@ ws1.cell(row=note_row_1, column=1,
                 "The_Refill_Engine adds it to the plan's tracked wealth the same way it subtracts a Roth "
                 "conversion, so new savings can't be mistaken for market outperformance in the GOOD/POOR "
                 "trigger, while the Safety Anchor's dollar target still grows to match the larger pool. "
+                "If you buy a QLAC (longevity annuity), log the premium and the guaranteed annual income "
+                "that tranche buys in the year of purchase -- one row per purchase year, so a laddered "
+                "purchase is just several logged years. The premium is treated like a Roth conversion: "
+                "it leaves the plan's liquid, tracked wealth, so P_track drops by it and the GOOD/POOR "
+                "trigger isn't fooled. "
                 "Actual Balance is logged quarterly instead, directly in the Quarterly Refill Engine table "
                 "on The_Refill_Engine, alongside everything else you already update there.")
 ws1.cell(row=note_row_1, column=1).font = italic_note_font
@@ -571,11 +618,32 @@ for i in range(len(ACCOUNTS)):
     r = DATA_START_ROW_2 + i
     ws2.cell(row=r, column=4, value=f"=C{r}/$C${TOTAL_ROW_2}")
 
-note_row_2 = TOTAL_ROW_2 + 1
+# Illiquid longevity asset, deliberately kept OUT of the liquid total above
+# (which every hurdle/refill formula reads). Its value is a formula filled in
+# once The_Refill_Engine's QLAC valuation cell exists, further down.
+QLAC_ROW_2 = TOTAL_ROW_2 + 1
+TOTAL_INCL_QLAC_ROW_2 = TOTAL_ROW_2 + 2
+style_body_cell(ws2, QLAC_ROW_2, 1).value = "Longevity Annuity (QLAC) -- illiquid, not in total above"
+style_body_cell(ws2, QLAC_ROW_2, 2).value = "Insurer QLAC (present value, computed -- don't type here)"
+style_body_cell(ws2, QLAC_ROW_2, 3, number_format=CURRENCY_FMT)
+style_body_cell(ws2, QLAC_ROW_2, 4, number_format=PERCENT_FMT).value = (
+    f"=IFERROR(C{QLAC_ROW_2}/C{TOTAL_INCL_QLAC_ROW_2},0)")
+ws2.cell(row=TOTAL_INCL_QLAC_ROW_2, column=1, value="Household Net Worth incl. QLAC")
+ws2.cell(row=TOTAL_INCL_QLAC_ROW_2, column=3, value=f"=C{TOTAL_ROW_2}+C{QLAC_ROW_2}")
+for col in range(1, 5):
+    cell = ws2.cell(row=TOTAL_INCL_QLAC_ROW_2, column=col)
+    cell.font = bold_body_font
+    cell.fill = accent_fill
+    cell.border = thin_border
+ws2.cell(row=TOTAL_INCL_QLAC_ROW_2, column=3).number_format = CURRENCY_FMT
+
+note_row_2 = TOTAL_INCL_QLAC_ROW_2 + 1
 ws2.cell(row=note_row_2, column=1,
           value="Note: Live Balance figures are a manually-updated snapshot -- refresh them whenever you "
                 "check statements, ideally at least quarterly, so Tab 3's projections start from an "
-                "accurate baseline.")
+                "accurate baseline. The QLAC row is computed from The_Refill_Engine's QLAC inputs and the "
+                "purchases logged on Variables_And_Log; it sits below the liquid total on purpose, so the "
+                "hurdle model and refill engine only ever see money that can actually be spent.")
 ws2.cell(row=note_row_2, column=1).font = italic_note_font
 
 legend_row_2 = note_row_2 + 1
@@ -649,6 +717,10 @@ write_kv_row(r, "Cumulative Roth Conversion + Tax Cost (Logged To Date, Informat
              f"=SUM('Variables_And_Log'!{ROTH_CONVERSION_COL_LETTER}{DATA_START_ROW_1}:"
              f"{ROTH_CONVERSION_COL_LETTER}{LAST_DATA_ROW_1})", CURRENCY_FMT, is_summary=True)
 r += 1
+write_kv_row(r, "Cumulative QLAC Premiums Paid (Logged To Date, Informational)",
+             f"=SUM('Variables_And_Log'!{QLAC_PREMIUM_COL_LETTER}{DATA_START_ROW_1}:"
+             f"{QLAC_PREMIUM_COL_LETTER}{LAST_DATA_ROW_1})", CURRENCY_FMT, is_summary=True)
+r += 1
 ROTH_NOTE_ROW = r
 ws3.cell(row=r, column=1,
           value="Roth conversions are funded from non-TSP accounts. Since Roth funds are entirely out of "
@@ -659,7 +731,9 @@ ws3.cell(row=r, column=1,
                 "Variables_And_Log; the Annual SRR Hurdle Model below subtracts it from Current Predicted "
                 "Wealth (P_track) the same way it subtracts Annual Outflows, and that same reduced P_track "
                 "feeds both the GOOD/POOR trigger and every real dollar amount (Safety Anchor balance, "
-                "recommended transfers) -- deliberately no longer two separate tracks.")
+                "recommended transfers) -- deliberately no longer two separate tracks. A QLAC premium is "
+                "handled the same way: it moves money out of the plan's liquid, tracked accounts into an "
+                "illiquid annuity, so it is subtracted from P_track in its purchase year.")
 ws3.cell(row=r, column=1).font = italic_note_font
 r += 2  # blank spacer row
 
@@ -686,7 +760,62 @@ r += 1
 MIN_TRANSFER_PCT_CELL = write_config_row(
     r, "Minimum Transfer Threshold (% of That Year's P_track)", 0.001, PERCENT_FMT)
 r += 1
+# QLAC (longevity annuity) assumptions. Birth year is a generic placeholder --
+# type the real one into the Google Sheets copy, never back into this script.
+QLAC_BIRTH_YEAR_CELL = write_config_row(r, "QLAC: Annuitant Birth Year", 1965, "0")
+r += 1
+QLAC_START_AGE_CELL = write_config_row(r, "QLAC: Income Start Age", 85, "0")
+r += 1
+QLAC_ALIVE_CELL = write_config_row(r, "QLAC: Annuitant Living? (1 = yes, 0 = no)", 1, "0")
+r += 1
+QLAC_DISCOUNT_CELL = write_config_row(r, "QLAC: Valuation Discount Rate (~ G Fund yield)", 0.0425, PERCENT_FMT)
+r += 1
+QLAC_GOMPERTZ_M_CELL = write_config_row(r, "QLAC: Mortality -- Gompertz Modal Age", 93, "0.0")
+r += 1
+QLAC_GOMPERTZ_B_CELL = write_config_row(r, "QLAC: Mortality -- Gompertz Dispersion (Years)", 9.5, "0.0")
+r += 1
+QLAC_COUNT_MODE_ROW = r
+QLAC_COUNT_MODE_CELL = write_config_row(r, "QLAC: Count Toward G Fund Target As (COST / PV / NONE)",
+                                        "COST", "@")
+qlac_mode_dv = DataValidation(type="list", formula1='"COST,PV,NONE"', allow_blank=True)
+ws3.add_data_validation(qlac_mode_dv)
+qlac_mode_dv.add(ws3.cell(row=QLAC_COUNT_MODE_ROW, column=3))
+r += 1
 r += 1  # blank spacer row
+
+# Present value of the QLAC's remaining income stream, valued at annuitant age
+# `age` with `income` dollars/year of guaranteed income in force. Payments are
+# modeled annually, mid-year, starting at the Income Start Age (or now, if
+# already past it), for up to 45 years, each weighted by Gompertz survival from
+# `age` and discounted at the configured rate. Zero if no income is in force
+# or the annuitant has died (no death benefit is modeled). The array constant
+# keeps this a single-cell formula that Excel, LibreOffice and Google Sheets
+# all evaluate inside SUMPRODUCT -- no helper table needed.
+QLAC_PAYMENT_OFFSETS = "{" + ",".join(f"{k + 0.5}" for k in range(45)) + "}"
+
+
+def qlac_pv_formula(age, income):
+    pay_age = f"(MAX({QLAC_START_AGE_CELL},{age})+{QLAC_PAYMENT_OFFSETS})"
+    survival = (f"EXP(-(EXP(({pay_age}-{QLAC_GOMPERTZ_M_CELL})/{QLAC_GOMPERTZ_B_CELL})"
+                f"-EXP((({age})-{QLAC_GOMPERTZ_M_CELL})/{QLAC_GOMPERTZ_B_CELL})))")
+    discount = f"(1+{QLAC_DISCOUNT_CELL})^(-({pay_age}-({age})))"
+    return (f"IF(({income})=0,0,{QLAC_ALIVE_CELL}*({income})*"
+            f"SUMPRODUCT({survival}*{discount}))")
+
+
+def qlac_counted_formula(pv, premiums):
+    """How much of the QLAC counts toward the G Fund (safe-asset) target, per the
+    configured mode: COST = premiums paid (while the annuitant lives), PV = the
+    present value above, NONE = it sits outside the target entirely."""
+    return (f'IF({QLAC_COUNT_MODE_CELL}="PV",{pv},'
+            f'IF({QLAC_COUNT_MODE_CELL}="COST",{QLAC_ALIVE_CELL}*({premiums}),0))')
+
+
+QLAC_LOG_YEARS = f"'Variables_And_Log'!$A${DATA_START_ROW_1}:$A${LAST_DATA_ROW_1}"
+QLAC_LOG_PREMIUMS = (f"'Variables_And_Log'!${QLAC_PREMIUM_COL_LETTER}${DATA_START_ROW_1}:"
+                     f"${QLAC_PREMIUM_COL_LETTER}${LAST_DATA_ROW_1}")
+QLAC_LOG_INCOME = (f"'Variables_And_Log'!${QLAC_INCOME_COL_LETTER}${DATA_START_ROW_1}:"
+                   f"${QLAC_INCOME_COL_LETTER}${LAST_DATA_ROW_1}")
 
 write_kv_row(r, "Current G Fund Target % (Today)",
              f"=IF(YEAR(TODAY())-{RETIREMENT_START_CELL}>={RAMP_LENGTH_CELL},{ENDING_TARGET_CELL},"
@@ -695,8 +824,26 @@ write_kv_row(r, "Current G Fund Target % (Today)",
              PERCENT_FMT, is_summary=True)
 CURRENT_TARGET_PCT_ROW = r
 r += 1
+write_kv_row(r, "QLAC Present Value (Today)",
+             "=" + qlac_pv_formula(f"(YEAR(TODAY())-{QLAC_BIRTH_YEAR_CELL})", f"SUM({QLAC_LOG_INCOME})"),
+             CURRENCY_FMT, is_summary=True)
+QLAC_PV_TODAY_ROW = r
+QLAC_PV_TODAY_CELL = f"'The_Refill_Engine'!$B${QLAC_PV_TODAY_ROW}"
+r += 1
+write_kv_row(r, "QLAC Value Counted Toward G Fund Target (Today)",
+             "=" + qlac_counted_formula(f"B{QLAC_PV_TODAY_ROW}", f"SUM({QLAC_LOG_PREMIUMS})"),
+             CURRENCY_FMT, is_summary=True)
+QLAC_COUNTED_TODAY_ROW = r
+r += 1
+# The G Fund target % applies to liquid wealth PLUS whatever portion of the QLAC
+# is counted as a safe asset; the counted QLAC value then fills part of that
+# safe share, and the G Fund only has to hold the rest (floored at zero).
 write_kv_row(r, "Target Safety Anchor Balance (Today)",
-             f"=B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{CURRENT_TARGET_PCT_ROW}", CURRENCY_FMT, is_summary=True)
+             f"=MAX(0,(B{ACTUAL_WEALTH_SNAPSHOT_ROW}+B{QLAC_COUNTED_TODAY_ROW})*B{CURRENT_TARGET_PCT_ROW}"
+             f"-B{QLAC_COUNTED_TODAY_ROW})", CURRENCY_FMT, is_summary=True)
+r += 1
+write_kv_row(r, "Household Net Worth incl. QLAC (Present Value)",
+             f"=B{ACTUAL_WEALTH_SNAPSHOT_ROW}+B{QLAC_PV_TODAY_ROW}", CURRENCY_FMT, is_summary=True)
 r += 1
 
 ws3.cell(row=r, column=1,
@@ -706,8 +853,10 @@ ws3.cell(row=r, column=1,
                 "that window passes. Each year's actual target is computed per-year in the Annual SRR Hurdle "
                 "Model below and drives the Quarterly Refill Engine's 'Target Safety Anchor Balance (This "
                 "Year)' column, scaled against that year's Current Predicted Wealth (P_track), not a value "
-                "frozen at Year 1. The row above is only a live snapshot of today's applicable target for "
-                "quick reference. The Minimum Transfer Threshold keeps the recommended-transfer cell from "
+                "frozen at Year 1. The rows above are only a live snapshot of today's applicable target for "
+                "quick reference. A QLAC can be counted toward the safe share (COST or PV mode), in which "
+                "case it fills part of the target and the G Fund holds the rest -- but it can never pay a "
+                "bill before its income starts, so the Runway KPI below always uses the real G Fund balance. The Minimum Transfer Threshold keeps the recommended-transfer cell from "
                 "firing on a trivially small gap between that target and the G Fund's actual balance -- in "
                 "either direction.")
 ws3.cell(row=r, column=1).font = italic_note_font
@@ -779,7 +928,7 @@ for i, year in enumerate(YEARS):
         e_cell.value = f"={G_FUND_BALANCE_CELL}" if r == QUARTERLY_DATA_START else f"=H{r - 1}"
 
         i_cell = style_body_cell(ws3, r, 9, number_format=CURRENCY_FMT, border=border)
-        i_cell.value = f"=H{annual_row}*D{annual_row}"
+        i_cell.value = f"=N{annual_row}"
 
         # Bidirectional: pushes into the G Fund only in a GOOD year (unchanged from before), but
         # pulls money back out whenever the target has dropped below the actual balance by more
@@ -830,8 +979,8 @@ for i, year in enumerate(YEARS):
 # ---- ANNUAL SRR HURDLE MODEL (gates the quarterly engine above) ----
 ws3.cell(row=ANNUAL_BANNER_ROW, column=1,
           value="ANNUAL SRR HURDLE MODEL — STRATEGIC PACING CHECK (GATES THE QUARTERLY REFILL ABOVE)")
-ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=10)
-for col in range(1, 11):
+ws3.merge_cells(start_row=ANNUAL_BANNER_ROW, start_column=1, end_row=ANNUAL_BANNER_ROW, end_column=14)
+for col in range(1, 15):
     c = ws3.cell(row=ANNUAL_BANNER_ROW, column=col)
     c.font = section_font
     c.fill = section_fill
@@ -849,6 +998,10 @@ annual_headers = [
     "Safety Anchor % (This Year)",
     "Roth Conversion + Tax Cost (This Year)",
     "New Retirement Contributions (This Year)",
+    "QLAC Premium Paid (This Year)",
+    "QLAC Present Value (Year-End, Projected)",
+    "QLAC Value Counted Toward G Fund Target",
+    "Target Safety Anchor Balance ($, This Year)",
 ]
 for idx, h in enumerate(annual_headers, start=1):
     ws3.cell(row=ANNUAL_HEADER_ROW, column=idx, value=h)
@@ -873,9 +1026,9 @@ for i, year in enumerate(YEARS):
     # GOOD/POOR trigger, the Safety Anchor's dollar sizing) reads from -- there is
     # deliberately no separate adjusted track for either.
     if i == 0:
-        target_formula = f"=ROUND((B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{r})-C{r}-I{r}+J{r},2)"
+        target_formula = f"=ROUND((B{ACTUAL_WEALTH_SNAPSHOT_ROW}*B{r})-C{r}-I{r}+J{r}-K{r},2)"
     else:
-        target_formula = f"=ROUND((D{r - 1}*B{r})-C{r}-I{r}+J{r},2)"
+        target_formula = f"=ROUND((D{r - 1}*B{r})-C{r}-I{r}+J{r}-K{r},2)"
     style_body_cell(ws3, r, 4, number_format=CURRENCY_FMT).value = target_formula
 
     # Mirrors Current (D) until you freeze it: once your real starting balances and
@@ -923,6 +1076,31 @@ for i, year in enumerate(YEARS):
     # wealth without ever looking like market outperformance to the GOOD/POOR trigger.
     style_body_cell(ws3, r, 10, number_format=CURRENCY_FMT).value = (
         f"='Variables_And_Log'!{CONTRIBUTIONS_COL_LETTER}{var_log_row}"
+    )
+
+    # QLAC premium paid this year -- subtracted in column D's recursive formula, exactly
+    # like a Roth conversion: the money leaves the plan's liquid, tracked accounts for an
+    # illiquid annuity, so it is a real exit from P_track, not a market event.
+    style_body_cell(ws3, r, 11, number_format=CURRENCY_FMT).value = (
+        f"='Variables_And_Log'!{QLAC_PREMIUM_COL_LETTER}{var_log_row}"
+    )
+
+    # QLAC value at this year's end: annuitant age = year - birth year, with only the
+    # tranches logged in this year or earlier counted as in force.
+    income_in_force = f'SUMIF({QLAC_LOG_YEARS},"<="&A{r},{QLAC_LOG_INCOME})'
+    premiums_to_date = f'SUMIF({QLAC_LOG_YEARS},"<="&A{r},{QLAC_LOG_PREMIUMS})'
+    style_body_cell(ws3, r, 12, number_format=CURRENCY_FMT).value = (
+        "=" + qlac_pv_formula(f"(A{r}-{QLAC_BIRTH_YEAR_CELL})", income_in_force)
+    )
+    style_body_cell(ws3, r, 13, number_format=CURRENCY_FMT).value = (
+        "=" + qlac_counted_formula(f"L{r}", premiums_to_date)
+    )
+    # Dollar target the G Fund itself must hold: the safe share of (P_track + counted
+    # QLAC value), minus the counted QLAC value, floored at zero. With no QLAC (or mode
+    # NONE) this is exactly P_track x Safety Anchor %, as before. In COST mode a purchase
+    # lowers this target by exactly the premium -- the purchase came out of the safe share.
+    style_body_cell(ws3, r, 14, number_format=CURRENCY_FMT).value = (
+        f"=MAX(0,(D{r}+M{r})*H{r}-M{r})"
     )
 
     ws3.row_dimensions[r].height = 28
@@ -1037,6 +1215,12 @@ ws3.row_dimensions[OUTPUT_ROW_START].height = 60
 ws3.row_dimensions[OUTPUT_ROW_START + 1].height = 20
 ws3.row_dimensions[OUTPUT_ROW_END].height = 20
 
+protocol_note_row = OUTPUT_ROW_END + 1
+ws3.cell(row=protocol_note_row, column=1,
+          value="A QLAC never appears in this priority order: it has no cash value and can't be surrendered "
+                "or drawn early, so it is never a source of emergency liquidity -- only of income once its "
+                "start age arrives.")
+ws3.cell(row=protocol_note_row, column=1).font = italic_note_font
 legend_row_3 = OUTPUT_ROW_END + 2
 ws3.cell(row=legend_row_3, column=1, value=LEGEND_TEXT)
 ws3.cell(row=legend_row_3, column=1).font = italic_note_font
@@ -1066,12 +1250,16 @@ ws3.conditional_formatting.add(
 enable_gridlines(ws3)
 ws3.freeze_panes = f"A{QUARTERLY_DATA_START}"
 
+# Now that the QLAC valuation cell exists, wire it into Account_Tracker.
+ws2.cell(row=QLAC_ROW_2, column=3).value = f"={QLAC_PV_TODAY_CELL}"
+
 # --------------------------------------------------------------------------
 # Autofit + explicit widths + final gridline pass for every tab
 # --------------------------------------------------------------------------
 autofit_columns(ws1, skip_rows={note_row_1, legend_row_1})
 autofit_columns(ws2, skip_rows={note_row_2, legend_row_2})
-autofit_columns(ws3, skip_rows={ROTH_NOTE_ROW, CONFIG_NOTE_ROW, note_row_3, legend_row_3})
+autofit_columns(ws3, skip_rows={ROTH_NOTE_ROW, CONFIG_NOTE_ROW, note_row_3, legend_row_3,
+                                protocol_note_row})
 for ws in (ws1, ws2, ws3):
     ws.sheet_view.showGridLines = True
 
@@ -1079,6 +1267,8 @@ ws1.column_dimensions["A"].width = 14
 for col_letter in MONTH_COLS:
     ws1.column_dimensions[col_letter].width = 12
 ws1.column_dimensions[ROTH_CONVERSION_COL_LETTER].width = 18
+ws1.column_dimensions[QLAC_PREMIUM_COL_LETTER].width = 18
+ws1.column_dimensions[QLAC_INCOME_COL_LETTER].width = 22
 
 ws3.column_dimensions["A"].width = 42
 ws3.column_dimensions["B"].width = 14
@@ -1092,6 +1282,8 @@ ws3.column_dimensions["I"].width = 22
 ws3.column_dimensions["J"].width = 22
 ws3.column_dimensions["K"].width = 24
 ws3.column_dimensions["L"].width = 24
+ws3.column_dimensions["M"].width = 24
+ws3.column_dimensions["N"].width = 24
 
 # --------------------------------------------------------------------------
 # TAB 4: Graph
