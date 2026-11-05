@@ -71,6 +71,7 @@ try
     set annualBannerRow to findRow(wsRefill, "STRATEGIC PACING CHECK", 200)
     set annualDataStart to annualBannerRow + 2
 
+    log "verify_household_engine: starting Check 1"
     -- ---- Check 1: a logged Roth conversion + tax cost is a real, permanent
     -- ---- reduction to Current Predicted Wealth (P_track) for that year --
     -- ---- and that SAME reduction flows through to both the Target Safety
@@ -106,6 +107,7 @@ try
         error "Roth unification: Target Safety Anchor Balance (This Year) should fall by exactly the logged cost times that year's Safety Anchor % (proving it shares the same reduced basis as the trigger) -- expected drop of " & (50000 * safetyPct) & ", observed " & (safetyAnchorThisYearBefore - safetyAnchorThisYearAfter)
     end if
 
+    log "verify_household_engine: starting Check 2"
     -- ---- Check 2: the mirror image of Check 1 -- a logged New Retirement
     -- ---- Contribution is a real, permanent ADDITION to Current Predicted
     -- ---- Wealth (P_track) for that year, and that same increase raises
@@ -138,6 +140,7 @@ try
         error "Contribution mirror: Target Safety Anchor Balance (This Year) should rise by exactly the logged contribution times that year's Safety Anchor % (proving new savings correctly grow the dollar target) -- expected rise of " & (30000 * safetyPct2) & ", observed " & (safetyAnchorThisYearAfter2 - safetyAnchorThisYearBefore2)
     end if
 
+    log "verify_household_engine: starting Check 3"
     -- ---- Check 3: the G Fund balance floors at zero under a sustained draw;
     -- ---- it must never go negative, in any quarter, regardless of whether
     -- ---- the draw is large enough to also flip a given year's GOOD/POOR
@@ -169,6 +172,7 @@ try
         error "G Fund floor: end-of-quarter balance went negative (minimum seen: " & minGFundEnd & ") under a sustained \$2,000/month draw -- MAX(0, ...) floor appears broken"
     end if
 
+    log "verify_household_engine: starting Check 4"
     -- ---- Check 4: the Safety Anchor % ramp is linear between Starting and
     -- ---- Ending, using the default 30% -> 20% over 10 years. ----
     tell application "Microsoft Excel"
@@ -183,6 +187,7 @@ try
         error "Ramp linearity: expected ~27% three years in (30% ramping to 20% over 10 years), got " & year4Pct
     end if
 
+    log "verify_household_engine: starting Check 5"
     -- ---- Check 5: Default / Override / Effective precedence on a
     -- ---- configured input (Ramp Length). ----
     set rampRow to findRow(wsRefill, "Ramp Length", 20)
@@ -210,6 +215,7 @@ try
         error "Default/Override: clearing Override should revert Effective to Default (" & rampDefault & "), got " & rampEffectiveReverted
     end if
 
+    log "verify_household_engine: starting Check 6"
     -- ---- Check 6: an unlogged Actual Balance year shows as a true gap
     -- ---- (NA()), not a phantom zero, so the Graph tab doesn't plot a fake
     -- ---- data point. ----
@@ -221,6 +227,7 @@ try
         error "NA() gap: an unlogged Actual Balance year should read as a gap (missing value), got " & actualBalanceCell
     end if
 
+    log "verify_household_engine: starting Check 7"
     -- ---- Check 7: quarterly Actual Balance logging -- the interpolated
     -- ---- Current Predicted Wealth lands at the expected point between the
     -- ---- starting wealth and Year 1's P_track, and logging Q4 of a year
@@ -253,6 +260,7 @@ try
         error "Quarterly Actual Balance: logging Q4 should flow through to the Annual table's year-end figure -- expected 740000, got " & annualBalanceAfter
     end if
 
+    log "verify_household_engine: starting Check 8"
     -- ---- Check 8: the Recommended Transfer is bidirectional and respects
     -- ---- the Minimum Transfer Threshold in either direction. A gap smaller
     -- ---- than the threshold (as a % of that year's P_track) recommends $0;
@@ -324,6 +332,7 @@ try
         error "Bidirectional transfer: G Fund Balance (End of Qtr, Projected) should reflect the negative transfer pulling the balance back down to (roughly) target -- expected " & (targetThisYear - quarterlyOutflow) & ", got " & endOfQtrProjected
     end if
 
+    log "verify_household_engine: starting Check 9"
     -- ---- Check 9: a QLAC purchase is handled like a Roth conversion -- the
     -- ---- premium leaves the plan's liquid, tracked wealth, so P_track drops
     -- ---- by exactly that amount. In the default COST count mode, the G Fund's
