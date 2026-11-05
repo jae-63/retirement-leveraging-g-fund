@@ -57,10 +57,25 @@ end roughlyEqual
 
 tell application "Microsoft Excel"
     open (POSIX file "$XLSX_PATH")
+    -- Excel's open can return before the workbook is actually loaded (seen in
+    -- practice: "active workbook" was still missing value right after open),
+    -- so wait for it by name -- and address it by name below rather than via
+    -- "active workbook", which is only as reliable as whatever has focus.
+    set openedOK to false
+    repeat with attempt from 1 to 120
+        try
+            get name of workbook "$XLSX_NAME"
+            set openedOK to true
+            exit repeat
+        on error
+            delay 0.5
+        end try
+    end repeat
+    if not openedOK then error "$XLSX_NAME did not open within 60 seconds -- check Excel for a dialog (file repair, already open, etc.)" number 1
     calculate full
-    set wsRefill to worksheet "The_Refill_Engine" of active workbook
-    set wsLog to worksheet "Variables_And_Log" of active workbook
-    set wsTracker to worksheet "Account_Tracker" of active workbook
+    set wsRefill to worksheet "The_Refill_Engine" of workbook "$XLSX_NAME"
+    set wsLog to worksheet "Variables_And_Log" of workbook "$XLSX_NAME"
+    set wsTracker to worksheet "Account_Tracker" of workbook "$XLSX_NAME"
 end tell
 
 try
