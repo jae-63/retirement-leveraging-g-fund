@@ -324,10 +324,71 @@ try
         error "Bidirectional transfer: G Fund Balance (End of Qtr, Projected) should reflect the negative transfer pulling the balance back down to (roughly) target -- expected " & (targetThisYear - quarterlyOutflow) & ", got " & endOfQtrProjected
     end if
 
+    -- ---- Check 9: a QLAC purchase is handled like a Roth conversion -- the
+    -- ---- premium leaves the plan's liquid, tracked wealth, so P_track drops
+    -- ---- by exactly that amount. In the default COST count mode, the G Fund's
+    -- ---- own dollar target then falls by exactly the premium (the purchase
+    -- ---- came out of the safe share); in NONE mode it is simply P_track x
+    -- ---- Safety Anchor %; and marking the annuitant deceased zeroes the
+    -- ---- QLAC's present value (no death benefit is modeled). ----
+    set modeRow to findRow(wsRefill, "QLAC: Count Toward", 40)
+    set aliveRow to findRow(wsRefill, "QLAC: Annuitant Living", 40)
+
+    tell application "Microsoft Excel"
+        set pTrackBefore9 to value of cell annualDataStart of column 4 of wsRefill
+        set gTargetBefore9 to value of cell annualDataStart of column 14 of wsRefill
+
+        set value of range "T3" of wsLog to 210000
+        set value of range "U3" of wsLog to 90000
+        calculate full
+        set premiumCol9 to value of cell annualDataStart of column 11 of wsRefill
+        set pTrackAfter9 to value of cell annualDataStart of column 4 of wsRefill
+        set gTargetCost9 to value of cell annualDataStart of column 14 of wsRefill
+        set qlacPv9 to value of cell annualDataStart of column 12 of wsRefill
+        set safetyPct9 to value of cell annualDataStart of column 8 of wsRefill
+        set quarterlyTarget9 to value of cell quarterlyDataStart of column 9 of wsRefill
+
+        set value of range ("C" & modeRow) of wsRefill to "NONE"
+        calculate full
+        set gTargetNone9 to value of cell annualDataStart of column 14 of wsRefill
+
+        set value of range ("C" & aliveRow) of wsRefill to 0
+        calculate full
+        set qlacPvDeceased9 to value of cell annualDataStart of column 12 of wsRefill
+
+        set value of range ("C" & aliveRow) of wsRefill to ""
+        set value of range ("C" & modeRow) of wsRefill to ""
+        set value of range "T3" of wsLog to 0
+        set value of range "U3" of wsLog to 0
+        calculate full
+    end tell
+
+    if not roughlyEqual(premiumCol9, 210000, 1) then
+        error "QLAC pull-through: Annual table's QLAC Premium Paid column should read the logged 210000, got " & premiumCol9
+    end if
+    if not roughlyEqual(pTrackAfter9, pTrackBefore9 - 210000, 1) then
+        error "QLAC premium: Current Predicted Wealth (P_track) should drop by exactly the logged premium -- expected " & (pTrackBefore9 - 210000) & ", got " & pTrackAfter9
+    end if
+    if not roughlyEqual(gTargetCost9, gTargetBefore9 - 210000, 1) then
+        error "QLAC COST mode: the G Fund's dollar target should fall by exactly the premium -- expected " & (gTargetBefore9 - 210000) & ", got " & gTargetCost9
+    end if
+    if not roughlyEqual(quarterlyTarget9, gTargetCost9, 1) then
+        error "QLAC target wiring: the quarterly Target Safety Anchor Balance should read the annual G Fund dollar target -- expected " & gTargetCost9 & ", got " & quarterlyTarget9
+    end if
+    if not roughlyEqual(gTargetNone9, pTrackAfter9 * safetyPct9, 1) then
+        error "QLAC NONE mode: the G Fund's dollar target should be P_track x Safety Anchor % -- expected " & (pTrackAfter9 * safetyPct9) & ", got " & gTargetNone9
+    end if
+    if not (qlacPv9 > 0) then
+        error "QLAC PV: a logged \$90,000/yr tranche should have a positive present value, got " & qlacPv9
+    end if
+    if not roughlyEqual(qlacPvDeceased9, 0, 0.01) then
+        error "QLAC deceased: present value should be 0 once the annuitant is marked deceased, got " & qlacPvDeceased9
+    end if
+
     tell application "Microsoft Excel"
         close workbook "$XLSX_NAME" saving no
     end tell
-    log "OK: $XLSX_NAME -- Roth conversion unification, new-contribution mirror, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, quarterly Actual Balance logging, and bidirectional transfer + deadband all behave as designed"
+    log "OK: $XLSX_NAME -- Roth conversion unification, new-contribution mirror, G Fund floor, ramp linearity, Default/Override precedence, the NA() gap, quarterly Actual Balance logging, bidirectional transfer + deadband, and QLAC premium/valuation all behave as designed"
 on error errMsg number errNum
     try
         tell application "Microsoft Excel"

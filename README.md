@@ -39,6 +39,23 @@ Five tabs, in order:
 5. **Graph** — a read-only chart (Original vs. Current vs. Actual household wealth by
    year), kept on its own tab so it never crowds the data-entry tabs.
 
+**Optional longevity bucket (QLAC).** A Qualified Longevity Annuity Contract bought
+with pre-tax money is logged on Variables_And_Log (premium and guaranteed annual income,
+per purchase year, so a laddered purchase is just several rows). It is tracked as its own
+illiquid asset rather than part of the shield:
+
+- The premium is subtracted from Current Predicted Wealth (P_track) in its purchase year,
+  exactly like a Roth conversion: it leaves the plan's liquid, tracked accounts, so the
+  GOOD/POOR trigger isn't fooled and the dollar targets shrink to match.
+- Account_Tracker shows the QLAC's present value *below* the liquid total, so the hurdle
+  model and refill engine only ever see spendable money.
+- Its value is a survival-weighted, discounted present value (Gompertz mortality, inputs
+  on The_Refill_Engine), projected per year on the Annual SRR Hurdle Model.
+- A configured Count Mode (COST / PV / NONE, default COST) decides how much of it counts
+  toward the G Fund target's safe share; the G Fund then holds only the remainder. In
+  COST mode a purchase lowers the G Fund's dollar target by exactly the premium. It never
+  counts toward the Runway KPI or the Emergency Liquidity Protocol.
+
 **Workflow**: the generator script runs *once* to scaffold the workbook with generic
 placeholder data. The generated `.xlsx` is then imported into Google Sheets and becomes
 the long-lived, hand-maintained document — real account balances and payment amounts get
